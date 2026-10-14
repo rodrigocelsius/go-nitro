@@ -1,0 +1,36 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace / coverage
+coverage.out
+coverage.html
+*.cov
+*.prof
+
+# Env / secrets (keep .env.example)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Air / tooling
+tmp/
+.air.toml

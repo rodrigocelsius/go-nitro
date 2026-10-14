@@ -1,0 +1,82 @@
+# Compiled binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+nitro
+
+# Example binaries (`go build -o <dir-name> .`)
+examples/v1/basic/basic
+examples/v1/auth/auth
+examples/v1/crud/crud
+examples/v1/cleanarch/cleanarch
+examples/v1/cleanarch-blinq/cleanarch-blinq
+examples/v1/validation/validation
+examples/v1/blinq-hello/blinq-hello
+examples/v1/blinq-extras/blinq-extras
+examples/v1/db-blinq/db-blinq
+examples/v1/db-blinq-handlers/db-blinq-handlers
+examples/v1/db-linq/db-linq
+examples/v1/db-gorm/db-gorm
+examples/v1/db-sqlx/db-sqlx
+examples/v1/db-sqlc/db-sqlc
+examples/v1/transform/transform
+examples/v1/resource-dx/resource-dx
+examples/v1/auth-keycloak/auth-keycloak
+examples/v1/portable-types/portable-types
+examples/v1/worker-amqp/worker-amqp
+examples/v1/resource-aftercreate/resource-aftercreate
+examples/v1/resource-tenant-scoped/resource-tenant-scoped
+examples/v1/order-business/order-business
+examples/v1/pos-sales/pos-sales
+cmd/nitrogen/nitrogen
+
+# Test and coverage artifacts
+*.out
+*.cov
+*.prof
+*.test
+
+# Local scratch / agent notes
+*.bak
+*.old
+.antigravity/
+_prototypes/
+napkin.md
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.elixir_ls/
+.project
+.settings/
+.classpath
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

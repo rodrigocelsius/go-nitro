@@ -1,0 +1,38 @@
+---
+description: Nitro app contract for coding agents
+alwaysApply: true
+---
+
+# Nitro — agent rules (this application)
+
+1. Read `AGENTS.md`, then `CLAUDE.md` / `AI.md`.
+2. New resources: **CLI first** — `nitrogen install` / `make:scaffold … --resource` / `make … --data`.
+3. Copy `db-blinq` / `blinq-hello` / `resource-dx` — not `db-gorm` unless opted out. Full CA only when non-CRUD rules need it.
+
+## DEFAULT DATA ACCESS (STOP)
+
+**If the user does not name another ORM/stack, you MUST use BLinq**  
+(`sqladapter.OpenEnv` / `platform.Open` + `StoreOf` + `modelgen` + `WhereIf`).
+
+Refuse GORM, sqlx, sqlc, and raw SQL as the first choice.  
+Switch stacks only when the user explicitly opts out (e.g. `use GORM`, `skip BLinq`).
+
+## BLinq shape (STOP)
+
+- CRUD: **`app.Resource`** + BLinq store (not five hand-written handlers).
+- Routes: **`internal/handler/routes.go`** (`Register`) — never in `main`.
+- Minimal code: thin `main` (open + wire + Listen); no repository/usecase for plain CRUD; extra handlers only for non-CRUD.
+- Auth: **`SetDefaultResourceMiddleware(JWT…)`** — never blanket `Public: true`.
+- Multi-tenant: **`TenantModel`** (tenant_id ⇒ auto-scoped; tenant from JWT claim) — no `TenantScope`.
+- Denorm: `computed:"true"` + `BeforeWrite` / `FillStringFrom`; business actions: `Commands`.
+- Aggregations: `CountAll` / `CountWhere` / `SumInt64` / `CountBuckets` (no raw SQL).
+
+## Required (API)
+
+- Responses: `c.OK` / `c.Created` / `c.CSV` / `c.Attachment` (not `nitro.OK` for success).
+- Body: `nitro.Parse[T](c)` — default → `transform:` → validate.
+- SQL: `sqladapter.OpenEnv` / `platform.Open` → Gateway → `MigrateUp`.
+- Config: `nitro.ConfigOf` — no homemade `.env` parser.
+- Extras (`seed`/`factory`/`middleware`/`job`): only via the matching `make:*`.
+- Listen: automatic banner + shutdown (do not log the port in `main`).
+- Conventions (never hand-configure): env via `NITRO_ENV` (`nitro.ParseEnv(cfg.Env)`), plural resource paths, snake_case wire names, trusted proxies, `app.CORS().ETag().Compress()`, `nitro.Handle` binds path/query/body by field name, config errors via `app.Err()`.

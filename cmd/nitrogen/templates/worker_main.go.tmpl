@@ -1,0 +1,58 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os/signal"
+	"syscall"
+
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+	"%[1]s/internal/config"
+	"%[1]s/internal/consumer"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %%v", err)
+	}
+
+	q, err := nitro.NewRabbitQueue(nitro.RabbitConfig{
+		URL:      cfg.RabbitMQ.URL,
+		Exchange: cfg.RabbitMQ.Exchange,
+		Prefetch: cfg.RabbitMQ.Prefetch,
+	})
+	if err != nil {
+		log.Fatalf("rabbitmq: %%v", err)
+	}
+	defer q.Close()
+
+	if err := consumer.Register(q, cfg); err != nil {
+		log.Fatalf("subscribe: %%v", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		app := nitro.New(nitro.Config{
+			Env:              nitro.ParseEnv(cfg.Env),
+			ServiceName:      cfg.ServiceName,
+			DisableTelemetry: true,
+		})
+		app.Get("/health", func(c *nitro.Ctx) error {
+			return c.OK(nitro.Map{"status": "ok", "service": cfg.ServiceName})
+		})
+		_ = app.Listen(fmt.Sprintf(":%%d", cfg.HealthPort))
+	}()
+
+	log.Printf("%%s worker queue=%%s routing_key=%%s", cfg.ServiceName, cfg.QueueName, cfg.RoutingKey)
+	if err := q.Start(ctx); err != nil {
+		log.Fatalf("start: %%v", err)
+	}
+	<-ctx.Done()
+	_ = q.Stop()
+	log.Printf("%%s worker stopped", cfg.ServiceName)
+}

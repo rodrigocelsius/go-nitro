@@ -1,0 +1,19 @@
+package main
+
+import (
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+)
+
+func main() {
+	app := nitro.New()
+
+	app.Get("/", func(c *nitro.Ctx) error {
+		return c.Text("Hello, Nitro!")
+	})
+
+	app.Get("/health", func(c *nitro.Ctx) error {
+		return c.OK(nitro.Map{"status": "ok"})
+	})
+
+	nitro.Ok(app.Listen(":8080"))
+}

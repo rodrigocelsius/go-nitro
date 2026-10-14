@@ -1,0 +1,8 @@
+package handler
+
+import nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+// Register wires HTTP routes. Keep all routing here — not in main.
+func Register(app *nitro.App) {
+	app.Get("/health", Health)
+}

@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Discover every Go module in the repo (nested modules: `go test ./...` at
+  # the root does not cover them).
+  modules:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.find.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          # Exclude the umbrella root go.mod (no packages; go test ./... exits 1).
+          list=$(find . -name go.mod -not -path './examples/*' -not -path '*/testdata/*' -not -path '*/routetestdata*' -not -path '*/proto_nested/*' \
+            -printf '%h\n' | sed 's|^\./||' | grep -vx '\.' | sort | jq -R . | jq -sc .)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.modules.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: vet
+        working-directory: ${{ matrix.module }}
+        # stdmethods off: ports.Serializer/adapters/json expose MarshalJSON(v any)
+        # (non-standard signature by design; renaming would break the public API).
+        run: go vet -stdmethods=false ./...
+      - name: test (race)
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 -shuffle=on ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: gofmt
+        run: |
+          out=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$out" ]; then echo "Unformatted files:"; echo "$out"; exit 1; fi
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck (all modules)
+        run: |
+          for m in $(find . -name go.mod -not -path './examples/*' -printf '%h\n' | sed 's|^\./||' | grep -vx '\.'); do
+            echo "== $m"; (cd "$m" && govulncheck ./...) || exit 1
+          done
+
+  # Real databases: Postgres, MySQL, MariaDB, SQL Server (SQLite runs in-process).
+  # NITRO_SQL_REQUIRE=1 turns "database unreachable" into a failure instead of a skip.
+  sql-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: data/adapter/sql/go.mod
+          cache-dependency-path: data/adapter/sql/go.sum
+      - name: start databases
+        run: docker compose -f data/adapter/sql/testdata/docker-compose.yml up -d --wait
+      - name: integration tests
+        working-directory: data/adapter/sql
+        env:
+          NITRO_SQL_INTEGRATION: "1"
+          NITRO_SQL_REQUIRE: "1"
+        run: go test -tags=integration -count=1 -run TestLiveDrivers ./...
+      - name: stop databases
+        if: always()
+        run: docker compose -f data/adapter/sql/testdata/docker-compose.yml down -v
+
+  # Short fuzz smoke on the request-facing parsers.
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: fuzz (30s per target)
+        run: |
+          for m in $(grep -rl --include=*_test.go 'func Fuzz' . | xargs -n1 dirname | sort -u); do
+            for f in $(grep -h --include=*_test.go -o 'func Fuzz[A-Za-z0-9_]*' $m/*_test.go | awk '{print $2}'); do
+              echo "== $m $f"; (cd $m && go test -run '^$' -fuzz "^$f\$" -fuzztime 30s .) || exit 1
+            done
+          done

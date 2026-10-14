@@ -1,0 +1,16 @@
+module github.com/rodrigocelsius/go-nitro/json/gen/routetestdata/v2
+
+go 1.22.2
+
+require (
+	github.com/rodrigocelsius/go-nitro/v2 v2.0.0-00010101000000-000000000000
+	github.com/valyala/fasthttp v1.51.0
+)
+
+require (
+	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/klauspost/compress v1.17.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+)
+
+replace github.com/rodrigocelsius/go-nitro/v2 => ../../../

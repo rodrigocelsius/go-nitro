@@ -1,0 +1,26 @@
+package config
+
+import nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+type Config struct {
+	HealthPort  int    `env:"HEALTH_PORT" default:"8081"`
+	Env         string `env:"NITRO_ENV" default:"production"`
+	ServiceName string `env:"SERVICE_NAME" default:"worker"`
+	QueueName   string `env:"QUEUE_NAME" default:"jobs"`
+	RoutingKey  string `env:"ROUTING_KEY" default:"jobs"`
+	RabbitMQ    RabbitConfig
+}
+
+type RabbitConfig struct {
+	URL      string `env:"RABBITMQ_URL" default:"amqp://guest:guest@127.0.0.1:5672/"`
+	Exchange string `env:"RABBITMQ_EXCHANGE" default:"nitro.events"`
+	Prefetch int    `env:"RABBITMQ_PREFETCH" default:"5"`
+}
+
+func Load() (Config, error) {
+	// Export .env / .env.local to the process (real env vars win) so code that
+	// reads os.Getenv — sqladapter.OpenEnv, OTEL, REDIS_ADDR — sees the same
+	// values as Config. No-op when the files are absent (containers).
+	nitro.LoadDotEnv()
+	return nitro.ConfigOf[Config]()
+}

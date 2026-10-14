@@ -1,0 +1,23 @@
+package consumer
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+	"%[1]s/internal/config"
+)
+
+// Register binds the worker queue to the routing key.
+func Register(q nitro.Queue, cfg config.Config) error {
+	return nitro.SubscribeRoute(q, cfg.QueueName, cfg.RoutingKey, func(ctx context.Context, msg *nitro.QueueMessage) error {
+		var payload map[string]any
+		_ = json.Unmarshal(msg.Payload, &payload)
+		log.Printf("received id=%%s attempts=%%d tenant=%%s payload=%%v",
+			msg.ID, msg.Attempts, msg.Metadata["tenant_id"], payload)
+		// TODO: call usecase
+		return nil
+	})
+}

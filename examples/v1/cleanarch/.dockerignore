@@ -1,0 +1,35 @@
+# Git / IDE
+.git
+.gitignore
+.idea
+.vscode
+*.swp
+*~
+
+# Env / secrets
+.env
+.env.local
+.env.dev
+.env.stage
+.env.prod
+*.pem
+*.key
+
+# Build / test artifacts
+bin
+dist
+tmp
+*.test
+*.out
+coverage.*
+*.cov
+*.prof
+
+# Docs / compose (not needed in image)
+README.md
+docker-compose.yml
+Makefile
+migrations
+
+# Local modules
+vendor

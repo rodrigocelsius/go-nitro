@@ -1,0 +1,9 @@
+package usecases
+
+import "%s/domain"
+
+type UserService struct{}
+
+func (s *UserService) Create(email, name string) (*domain.User, error) {
+	return &domain.User{Email: email, Name: name}, nil
+}

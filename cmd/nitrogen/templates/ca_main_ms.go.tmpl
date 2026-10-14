@@ -1,0 +1,27 @@
+package main
+
+import (
+	"fmt"
+	"log"
+
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+	"%[1]s/internal/config"
+	"%[1]s/internal/handler"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %%v", err)
+	}
+
+	app := nitro.New(nitro.Config{
+		Env:         nitro.ParseEnv(cfg.Env),
+		ServiceName: cfg.ServiceName,
+	})
+	handler.Register(app)
+	app.Info(cfg.ServiceName, "1.4.0")
+
+	nitro.Ok(app.Listen(fmt.Sprintf(":%%d", cfg.Port)))
+}

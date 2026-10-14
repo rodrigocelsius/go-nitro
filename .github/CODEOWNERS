@@ -1,0 +1,4 @@
+# Default owner; add per-area owners as the team grows.
+*            @rodrigocelsius
+/adapters/auth/  @rodrigocelsius
+/SECURITY.md @rodrigocelsius

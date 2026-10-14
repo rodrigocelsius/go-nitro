@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS extras_demo (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL
+);

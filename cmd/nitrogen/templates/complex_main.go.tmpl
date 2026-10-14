@@ -1,0 +1,21 @@
+package main
+
+import (
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+	"%[1]s/config"
+	"%[1]s/handlers"
+)
+
+func main() {
+	cfg := config.Load()
+	app := nitro.New()
+
+	app.Get("/", func(c *nitro.Ctx) error {
+		return c.Text("Hello, Nitro!")
+	})
+	app.Get("/health", handlers.Health)
+	app.Post("/users", handlers.CreateUser)
+
+	nitro.Ok(app.Listen(":" + cfg.Port))
+}

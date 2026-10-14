@@ -1,0 +1,14 @@
+package handlers
+
+import nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
+
+func CreateUser(c *nitro.Ctx) error {
+	body, err := nitro.Parse[struct {
+		Email string `json:"email" validate:"required,email"`
+		Name  string `json:"name"`
+	}](c)
+	if err != nil {
+		return err
+	}
+	return c.Created(nitro.Map{"email": body.Email, "name": body.Name})
+}
