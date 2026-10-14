@@ -26,7 +26,7 @@ You are generating or changing code in **Nitro v2** (`github.com/rodrigocelsius/
 | Do (default) | Do not (unless user asks) |
 |--------------|---------------------------|
 | `sqladapter.OpenEnv` / `platform.Open` | raw `pgxpool` / `database/sql` without Gateway |
-| `sqladapter.StoreOf[T](db, "table")` | GORM / sqlx / sqlc models |
+| `sqladapter.StoreFor[T](db)` (table by convention; `StoreOf[T](db, "table")` only off-convention) | GORM / sqlx / sqlc models |
 | `app.Resource` + `routes.go` | five hand-rolled CRUD handlers / fat `main` |
 | `modelgen.Products.Name.Eq(...)` / `WhereIf` / `OrderBy` / `CreateMany` / `UpdateWhere` | stringly SQL (`"WHERE name = $1"`) / loop `CreateOne` |
 | `store.CountAll` / `CountWhere` / `SumInt64` / `FindOrdered` / `CountBy` / `CountBuckets` | `StdDB().Query` / raw `COUNT(*)` / N+1 counts |
@@ -125,7 +125,7 @@ Canonical layout: [`examples/v1/cleanarch`](examples/v1/cleanarch/) (memory) · 
 17. **DB pool:** `OpenEnv` / `Ready` (or `OpenWithPool` + `EnsureSchema`). Health: `Ping` / `NamedHealth`.
 18. **Loose body:** `c.Bind` / `c.BindMap()`. Structs: `Parse` / `BodyParser` / `BodyJSON`.
 19. **Scaffold:** always via `nitrogen new` + `make:*` + `install`. Example: `examples/v1/cleanarch` (memory) or `examples/v1/cleanarch-blinq` (SQL + BLinq).
-20. **Telemetry ON** by default (OTEL HTTP + DB Gateway; DB spans are children of HTTP). Opt-out: `NITRO_OTEL=0` / `DisableTelemetry` (also DB) / `NITRO_DB_QUIET=1` (DB only). Flush on shutdown.
+20. **Telemetry ON** when something exports (OTEL HTTP + DB Gateway; DB spans are children of HTTP; W3C `traceparent` joined). OTLP needs `import _ "github.com/rodrigocelsius/go-nitro/adapters/otel/v2/otlp"` (CLI apps have it) + `OTEL_EXPORTER_OTLP_ENDPOINT`; without an exporter tracing is a no-op (zero cost). Opt-out: `NITRO_OTEL=0` / `DisableTelemetry` (also DB) / `NITRO_DB_QUIET=1` (DB only). Flush on shutdown.
 21. **Modularization:** `app.Mount`; routes `.Name` + `c.URL`; SPA `SinglePageApp`; `app.Hooks()`.
 22. **Listen:** banner + `Listening on http://…` and shutdown logs are **automatic** — do not duplicate `log.Printf("listening…")` in `main`.
 23. **Stack choice:** if a prompt names GORM/sqlx/sqlc/raw SQL, honor it and mention the BLinq default once; for generic asks, use BLinq.
@@ -146,6 +146,7 @@ Nitro is Convention over Configuration; the defaults below are tested by `pkg/co
 | Config errors | never panic: `app.Err()` / `Listen` return the first mistake | `recover()` around setup |
 | IDs / request id | UUID v7 (`nitro.Model`); `X-Request-ID` is UUID v7 | custom id generators |
 | Errors | `{"error": …}`; RFC 9457 via `Config{ErrorHandler: nitro.ProblemDetails()}` | hand-rolled error envelopes |
+| Logs | one format for HTTP + DB: `NITRO_LOG_FORMAT=text\|json`, `NITRO_LOG_LEVEL`; DB queries DEBUG, slow (`NITRO_DB_SLOW_MS`) WARN | custom access/query loggers to "quiet" or "reformat" logs |
 
 Removed in 2.0.0 (do not use): `nitro.CORS/Compress/Timeout`, `nitro.OK/Created/NoContent` helpers, `MapAny`, `SerialID`, `WithCache`, `ResourceOpts` option structs — see the migration table in [`docs/guide/conventions.md`](docs/guide/conventions.md). Reference app generated 100% by the CLI: [`examples/v1/cli-shop`](examples/v1/cli-shop/); zero-config tour: [`examples/v1/conventions`](examples/v1/conventions/).
 

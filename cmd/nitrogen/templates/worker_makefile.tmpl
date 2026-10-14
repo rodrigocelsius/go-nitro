@@ -4,7 +4,7 @@ run:
 	go run ./cmd/worker
 
 build:
-	go build -o bin/worker ./cmd/worker
+	go build -trimpath -ldflags="-s -w" -o bin/worker ./cmd/worker
 
 tidy:
 	go mod tidy

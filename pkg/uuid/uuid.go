@@ -271,7 +271,11 @@ func (u UUID) MarshalJSON() ([]byte, error) {
 	if u.IsZero() {
 		return []byte(`""`), nil
 	}
-	return json.Marshal(u.String())
+	// Hex digits and dashes never need JSON escaping: one allocation.
+	b := make([]byte, 38)
+	b[0], b[37] = '"', '"'
+	encodeHex(b[1:37], u)
+	return b, nil
 }
 
 // UnmarshalJSON accepts a quoted UUID string (or null/empty → zero).

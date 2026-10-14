@@ -79,6 +79,13 @@ type Schema struct {
 	Items       *Schema            `json:"items,omitempty"`
 	Ref         string             `json:"$ref,omitempty"`
 	Example     any                `json:"example,omitempty"`
+	Nullable    bool               `json:"nullable,omitempty"`
+	ReadOnly    bool               `json:"readOnly,omitempty"`
+}
+
+// RefSchema returns a $ref to components.schemas[name].
+func RefSchema(name string) *Schema {
+	return &Schema{Ref: "#/components/schemas/" + name}
 }
 
 // Components are reusable OpenAPI components.
@@ -109,6 +116,10 @@ type RouteInfo struct {
 	Params      []Parameter
 	RequestBody *RequestBody
 	Response    interface{}
+	// ResponseSchema, if set, documents the success response body.
+	ResponseSchema *Schema
+	// SuccessStatus, if set (e.g. 201), is the only 2xx code documented.
+	SuccessStatus int
 	// Security, if non-nil, applies to the operation (e.g. BearerAuth()).
 	// An empty slice [] marks the route as public (no auth).
 	Security []SecurityRequirement

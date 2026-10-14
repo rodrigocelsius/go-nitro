@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 	"github.com/rodrigocelsius/go-nitro/pkg/convert/v2"
+	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 )
 
 type Meta struct {

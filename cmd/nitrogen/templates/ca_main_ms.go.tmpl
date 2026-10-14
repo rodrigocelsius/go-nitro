@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	_ "github.com/rodrigocelsius/go-nitro/adapters/otel/v2/otlp" // OTLP export when OTEL_EXPORTER_OTLP_ENDPOINT is set
 	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 
 	"%[1]s/internal/config"

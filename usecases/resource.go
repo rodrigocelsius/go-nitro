@@ -461,7 +461,7 @@ func makeUpdateHandler(meta ResourceMetadata, repo domain.ResourceRepository, op
 			resetSystemFields(entity, existing, opts, false)
 		}
 
-		setEntityIDField(reflect.ValueOf(entity).Elem().FieldByName("ID"), id)
+		setEntityIDField(domain.FieldByName(reflect.ValueOf(entity).Elem(), "ID"), id)
 
 		// The tenant is owned by the server: re-stamp it on every update so a
 		// client can neither move the record to another tenant (merge/PATCH)
@@ -653,20 +653,7 @@ func resetSystemFields(entity, existing any, opts ResourceOpts, isCreate bool) {
 			xv = reflect.Value{}
 		}
 	}
-	field := func(v reflect.Value, name string) reflect.Value {
-		if !v.IsValid() {
-			return reflect.Value{}
-		}
-		sf, ok := v.Type().FieldByName(name)
-		if !ok {
-			return reflect.Value{}
-		}
-		fv, err := v.FieldByIndexErr(sf.Index) // nil embedded pointer → skip
-		if err != nil {
-			return reflect.Value{}
-		}
-		return fv
-	}
+	field := domain.FieldByName // cached; nil embedded pointer → invalid
 	restore := func(name string) {
 		fv := field(ev, name)
 		if !fv.IsValid() || !fv.CanSet() {

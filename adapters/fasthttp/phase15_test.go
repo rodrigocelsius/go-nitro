@@ -92,8 +92,8 @@ func TestApp_Test_MethodMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Test error: %v", err)
 	}
-	if resp.StatusCode() != 404 {
-		t.Errorf("StatusCode = %d, want 404", resp.StatusCode())
+	if resp.StatusCode() != 405 {
+		t.Errorf("StatusCode = %d, want 405", resp.StatusCode())
 	}
 }
 

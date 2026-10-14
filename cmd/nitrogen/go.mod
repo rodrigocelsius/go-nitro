@@ -32,4 +32,4 @@ require github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.0
 
 require github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.0
 
-require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.0 // indirect
+require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.0

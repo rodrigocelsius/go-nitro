@@ -1,6 +1,7 @@
 package fasthttp
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -49,6 +50,8 @@ var accessLogBufPool = sync.Pool{
 // LoggerConfig configures the access-log middleware.
 type LoggerConfig struct {
 	// Format: "text" (Fiber-style, colored), "plain" (method path status ms), "json".
+	// Empty follows the NITRO_LOG_FORMAT convention (text unless "json"), the
+	// same format the DB gateway uses.
 	Format string
 	// SkipRoutes lists routes that must not be logged.
 	// Defaults() uses ["/health","/ready","/live","/metrics"] when empty.
@@ -102,8 +105,9 @@ func LoggerPost(cfg ...LoggerConfig) domain.Handler {
 		c = cfg[0]
 	}
 	if c.Format == "" {
-		c.Format = "text"
+		c.Format = domain.LogFormatFromEnv()
 	}
+	minLevel := domain.LogLevelFromEnv()
 	if c.TimeFormat == "" {
 		c.TimeFormat = "2006/01/02 15:04:05"
 	}
@@ -136,6 +140,9 @@ func LoggerPost(cfg ...LoggerConfig) domain.Handler {
 		}
 
 		status := fctx.Response.StatusCode()
+		if accessLevel(status) < minLevel {
+			return nil
+		}
 		method := b2s(fctx.Method())
 		elapsed := time.Since(fc.StartTime())
 		ip := fc.ClientIP()
@@ -155,7 +162,7 @@ func LoggerPost(cfg ...LoggerConfig) domain.Handler {
 			buf = appendJSONAccess(buf, method, path, status, elapsed, ip, rid, bytesOut)
 		case "plain":
 			buf = appendPlainAccess(buf, method, path, status, elapsed)
-		default: // text — Fiber-style: [DEBUG] - date - status - METHOD - lat - path
+		default: // text — Fiber-style: [LEVEL] - date - status - METHOD - lat - path
 			buf = appendFiberAccess(buf, useColor, c.TimeFormat, method, path, status, elapsed)
 		}
 		buf = append(buf, '\n')
@@ -244,10 +251,26 @@ func appendPlainAccess(buf []byte, method, path string, status int, elapsed time
 	return buf
 }
 
+// accessLevel maps a response status to a log level: 5xx error, 4xx warn,
+// everything else info — the same levels the DB gateway logs with.
+func accessLevel(status int) slog.Level {
+	switch {
+	case status >= 500:
+		return slog.LevelError
+	case status >= 400:
+		return slog.LevelWarn
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func appendJSONAccess(buf []byte, method, path string, status int, elapsed time.Duration, ip, rid string, bytesOut int) []byte {
 	buf = append(buf, `{"time":"`...)
-	buf = time.Now().AppendFormat(buf, time.RFC3339)
-	buf = append(buf, `","method":"`...)
+	buf = time.Now().AppendFormat(buf, time.RFC3339Nano) // same precision as slog (DB lines)
+	// level + msg keep access lines shaped like slog JSON (DB gateway logs).
+	buf = append(buf, `","level":"`...)
+	buf = append(buf, accessLevel(status).String()...)
+	buf = append(buf, `","msg":"http request","method":"`...)
 	buf = appendJSONString(buf, method)
 	buf = append(buf, `","path":"`...)
 	// path/ip come from the request: escape them so a crafted URL cannot
@@ -305,11 +328,12 @@ func appendFiberAccess(buf []byte, color bool, timeFmt, method, path string, sta
 	statusColor := statusANSI(status)
 	methodColor := methodANSI(method)
 
-	// [DEBUG]
+	// [LEVEL] by status: [INFO] / [WARN] 4xx / [ERROR] 5xx
+	level := accessLevel(status)
 	if color {
-		buf = append(buf, ansiWhite...)
+		buf = append(buf, levelANSI(level)...)
 	}
-	buf = append(buf, "[DEBUG]"...)
+	buf = append(buf, domain.LevelTag(level)...)
 	if color {
 		buf = append(buf, ansiReset...)
 	}
@@ -366,6 +390,17 @@ func appendFiberAccess(buf []byte, color bool, timeFmt, method, path string, sta
 		buf = append(buf, ansiReset...)
 	}
 	return buf
+}
+
+func levelANSI(l slog.Level) string {
+	switch {
+	case l >= slog.LevelError:
+		return ansiRed
+	case l >= slog.LevelWarn:
+		return ansiYellow
+	default:
+		return ansiWhite
+	}
 }
 
 func statusANSI(status int) string {

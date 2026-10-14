@@ -72,6 +72,8 @@ At runtime prefer app.OpenAPI(...) / app.Swagger(...) after registering routes.`
 
 	gen := openapi.NewGenerator(title, desc, version)
 	gen.AddServer("http://127.0.0.1:8080", "local")
+	gen.UseErrorSchema()
+	schemas := newSchemaBuilder(root, gen)
 	if bearer {
 		gen.AddBearerAuth("")
 	}
@@ -93,6 +95,11 @@ At runtime prefer app.OpenAPI(...) / app.Swagger(...) after registering routes.`
 		if bearer && looksProtected(r.path) {
 			info.Security = openapi.BearerAuth()
 		}
+		if r.model != "" {
+			if rs, ok := schemas.resource(r.model); ok {
+				describeResourceRoute(&info, rs)
+			}
+		}
 		gen.AddRoute(info)
 	}
 
@@ -111,6 +118,38 @@ At runtime prefer app.OpenAPI(...) / app.Swagger(...) after registering routes.`
 	}
 	fmt.Printf("nitrogen: wrote %s (%d path ops)\n", out, len(seen))
 	fmt.Println("nitrogen: tip — serve live spec with app.OpenAPI(title, desc, version) after routes")
+}
+
+// describeResourceRoute documents a Resource CRUD route with the model's
+// schemas and the conventional statuses (201 create, 204 delete).
+func describeResourceRoute(info *openapi.RouteInfo, rs resourceSchemas) {
+	item := strings.HasSuffix(info.Path, "/:id")
+	switch {
+	case info.Method == "GET" && !item:
+		info.Summary = "List " + rs.full
+		info.SuccessStatus = 200
+		info.ResponseSchema = openapi.RefSchema(rs.list)
+		for _, q := range []struct{ name, typ string }{{"page", "integer"}, {"per_page", "integer"}, {"sort", "string"}} {
+			info.Params = append(info.Params, openapi.Parameter{Name: q.name, In: "query", Schema: &openapi.Schema{Type: q.typ}})
+		}
+	case info.Method == "GET":
+		info.Summary = "Get " + rs.full
+		info.SuccessStatus = 200
+		info.ResponseSchema = openapi.RefSchema(rs.full)
+	case info.Method == "POST":
+		info.Summary = "Create " + rs.full
+		info.SuccessStatus = 201
+		info.RequestBody = openapi.JSONBody(openapi.RefSchema(rs.input), true, nil)
+		info.ResponseSchema = openapi.RefSchema(rs.full)
+	case info.Method == "PATCH":
+		info.Summary = "Update " + rs.full
+		info.SuccessStatus = 200
+		info.RequestBody = openapi.JSONBody(openapi.RefSchema(rs.patch), true, nil)
+		info.ResponseSchema = openapi.RefSchema(rs.full)
+	case info.Method == "DELETE":
+		info.Summary = "Delete " + rs.full
+		info.SuccessStatus = 204
+	}
 }
 
 func tagFromPath(path string) string {

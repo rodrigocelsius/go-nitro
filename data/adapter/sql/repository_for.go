@@ -16,6 +16,16 @@ func RepositoryFor[T any](db *DB) nitro.TypedRepository[T] {
 	return repoFor[T](db, nitro.ResourcePath(new(T)))
 }
 
+// StoreFor is StoreOf with the table name taken from the convention shared
+// with app.Resource and the CLI (TableName() method, else the snake_case
+// plural of the type: Product → products, OrderItem → order_items,
+// Person → people). Use StoreOf only for a table outside the convention.
+//
+//	store := sqladapter.StoreFor[model.Product](db)
+func StoreFor[T any](db *DB, idCol ...string) *Store[T] {
+	return StoreOf[T](db, nitro.ResourcePath(new(T)), idCol...)
+}
+
 func repoFor[T any](db *DB, table string) nitro.TypedRepository[T] {
 	store := StoreOf[T](db, table)
 	return pgxadapter.NewStoreRepo[T](store)

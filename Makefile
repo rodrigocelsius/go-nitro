@@ -1,4 +1,4 @@
-.PHONY: test test-pkg test-cli test-blinq test-http test-data test-sql-integration openapi-smoke test-sql-tx
+.PHONY: test test-pkg test-cli test-blinq test-http test-data test-sql-integration openapi-smoke test-sql-tx test-examples
 
 # Nested modules: `go test ./...` from the repo root does not work.
 # Default `test` matches CI (pkg, CLI, blinq, fasthttp).
@@ -15,6 +15,13 @@ test-cli:
 openapi-smoke:
 	cd cmd/nitrogen && go run . openapi --dir ../../examples/v1/db-blinq -o /tmp/nitro-openapi-db-blinq.json
 	cd cmd/nitrogen && go run . openapi --dir ../../examples/v1/auth --bearer -o /tmp/nitro-openapi-auth.json
+
+# Every example: go.mod tidy, vet, tests (same as the CI "examples" job).
+test-examples:
+	@set -e; for d in $$(find examples -name go.mod -exec dirname {} \; | sort); do \
+	  echo "== $$d"; \
+	  (cd $$d && go mod tidy -diff && go vet ./... && NITRO_OTEL=0 NITRO_DB_QUIET=1 go test -count=1 ./...); \
+	done
 
 test-sql-tx:
 	cd examples/v1/sql-tx && go test ./...

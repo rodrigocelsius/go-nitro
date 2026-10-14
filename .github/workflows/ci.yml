@@ -48,7 +48,48 @@ jobs:
         run: go vet -stdmethods=false ./...
       - name: test (race)
         working-directory: ${{ matrix.module }}
+        # cmd/nitrogen includes the CLI e2e (new → install → make:scaffold ×3 →
+        # go build/vet/test of the generated app).
         run: go test -race -count=1 -shuffle=on ./...
+
+  # Examples are the canonical copy-paste source: each must stay tidy, build,
+  # vet and pass its tests against the framework at this commit.
+  examples-list:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.find.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          list=$(find examples -name go.mod -printf '%h\n' | sort | jq -R . | jq -sc .)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+
+  examples:
+    needs: examples-list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJson(needs.examples-list.outputs.list) }}
+    env:
+      NITRO_OTEL: "0"
+      NITRO_DB_QUIET: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.example }}/go.mod
+          cache-dependency-path: ${{ matrix.example }}/go.sum
+      - name: go.mod is tidy
+        working-directory: ${{ matrix.example }}
+        run: go mod tidy -diff
+      - name: vet
+        working-directory: ${{ matrix.example }}
+        run: go vet ./...
+      - name: test
+        working-directory: ${{ matrix.example }}
+        run: go test -count=1 ./...
 
   lint:
     runs-on: ubuntu-latest

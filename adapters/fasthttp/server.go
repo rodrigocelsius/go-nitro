@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -233,21 +235,24 @@ func (a *App) Handler() func(fctx *fasthttp.RequestCtx) {
 	notFoundHandler := usecases.CompileHandler(func(c *domain.Ctx) error {
 		return domain.ErrNotFound
 	}, a.globalPre, a.globalPost, nil)
+	methodNotAllowedHandler := usecases.CompileHandler(func(c *domain.Ctx) error {
+		return domain.ErrMethodNotAllowed
+	}, a.globalPre, a.globalPost, nil)
 	metricsEnabled := a.metrics != nil && a.metrics.enabled
 	panicBody := []byte(`{"error":"internal server error","message":"an unexpected error occurred"}`)
 
 	if a.requestTimeout > 0 {
-		return a.handlerWithTimeout(optionsHandler, notFoundHandler, metricsEnabled, panicBody)
+		return a.handlerWithTimeout(optionsHandler, notFoundHandler, methodNotAllowedHandler, metricsEnabled, panicBody)
 	}
 	if !metricsEnabled && a.disableInlineRecover {
-		return a.handlerHot(optionsHandler, notFoundHandler)
+		return a.handlerHot(optionsHandler, notFoundHandler, methodNotAllowedHandler)
 	}
-	return a.handlerFast(optionsHandler, notFoundHandler, metricsEnabled, panicBody)
+	return a.handlerFast(optionsHandler, notFoundHandler, methodNotAllowedHandler, metricsEnabled, panicBody)
 }
 
 // handlerHot is the lean fasthttp path: no metrics, no inline recover (pool still deferred).
 func (a *App) handlerHot(
-	optionsHandler, notFoundHandler domain.Handler,
+	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
 ) func(fctx *fasthttp.RequestCtx) {
 	validator := a.validator
 	return func(fctx *fasthttp.RequestCtx) {
@@ -262,7 +267,7 @@ func (a *App) handlerHot(
 
 		h, ok := a.lookupHandler(fctx, c, optionsHandler)
 		if !ok {
-			h = notFoundHandler
+			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
 		}
 		if err := h(&c.Ctx); err != nil {
 			a.handleError(&c.Ctx, err)
@@ -271,7 +276,7 @@ func (a *App) handlerHot(
 }
 
 func (a *App) handlerFast(
-	optionsHandler, notFoundHandler domain.Handler,
+	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
 	metricsEnabled bool,
 	panicBody []byte,
 ) func(fctx *fasthttp.RequestCtx) {
@@ -302,7 +307,7 @@ func (a *App) handlerFast(
 
 		h, ok := a.lookupHandler(fctx, c, optionsHandler)
 		if !ok {
-			h = notFoundHandler
+			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
 		}
 
 		if err := h(&c.Ctx); err != nil {
@@ -332,7 +337,7 @@ func (a *App) recoverBody(r any, panicBody []byte) []byte {
 }
 
 func (a *App) handlerWithTimeout(
-	optionsHandler, notFoundHandler domain.Handler,
+	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
 	metricsEnabled bool,
 	panicBody []byte,
 ) func(fctx *fasthttp.RequestCtx) {
@@ -364,7 +369,7 @@ func (a *App) handlerWithTimeout(
 
 		h, ok := a.lookupHandler(fctx, c, optionsHandler)
 		if !ok {
-			h = notFoundHandler
+			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
 		}
 
 		timeoutCtx, cancel := context.WithTimeout(c.RequestContext(), timeout)
@@ -384,6 +389,32 @@ func (a *App) handlerWithTimeout(
 			a.metrics.RecordRequest(fctx.Response.StatusCode(), time.Since(start))
 		}
 	}
+}
+
+// missHandler answers a lookup miss: 405 + Allow when the path exists under
+// other methods (RFC 9110 §15.5.6), otherwise 404.
+func (a *App) missHandler(fctx *fasthttp.RequestCtx, notFound, methodNotAllowed domain.Handler) domain.Handler {
+	var allowed []string
+	if a.useLinear {
+		path := b2s(fctx.Path())
+		for _, r := range a.routes {
+			var scratch domain.Ctx
+			if usecases.MatchPathLinear(r.Path, path, &scratch) && !slices.Contains(allowed, r.Method) {
+				allowed = append(allowed, r.Method)
+			}
+		}
+	} else {
+		allowed = a.router.AllowedMethods(fctx.Path())
+	}
+	if len(allowed) == 0 {
+		return notFound
+	}
+	if !slices.Contains(allowed, "OPTIONS") {
+		allowed = append(allowed, "OPTIONS") // answered by the router for every path
+	}
+	slices.Sort(allowed)
+	fctx.Response.Header.Set("Allow", strings.Join(allowed, ", "))
+	return methodNotAllowed
 }
 
 func (a *App) lookupHandler(fctx *fasthttp.RequestCtx, c *FastCtx, optionsHandler domain.Handler) (domain.Handler, bool) {

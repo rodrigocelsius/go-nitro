@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -91,15 +92,10 @@ func (d *DateTime) parseString(s string) error {
 		*d = DateTime{}
 		return nil
 	}
-	for _, layout := range []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05.999999999 -0700 MST", // time.Time.String() / some SQLite drivers
-		"2006-01-02 15:04:05.999999999-07:00",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05",
-	} {
+	// Pick the likely layout from the shape first: every failed time.Parse
+	// allocates an error, and scanning N rows × M timestamp columns through a
+	// fixed list (SQLite returns time.Time.String() text) dominated profiles.
+	for _, layout := range dateTimeLayoutsFor(s) {
 		if t, err := time.Parse(layout, s); err == nil {
 			*d = DateTimeFrom(t)
 			return nil
@@ -113,7 +109,11 @@ func (d DateTime) MarshalJSON() ([]byte, error) {
 	if d.IsZero() {
 		return []byte("null"), nil
 	}
-	return json.Marshal(d.t.UTC().Format(time.RFC3339Nano))
+	// RFC 3339 text never needs JSON escaping: one allocation.
+	b := make([]byte, 0, len(time.RFC3339Nano)+2)
+	b = append(b, '"')
+	b = d.t.UTC().AppendFormat(b, time.RFC3339Nano)
+	return append(b, '"'), nil
 }
 
 // UnmarshalJSON accepts RFC3339 / null.
@@ -130,4 +130,36 @@ func (d *DateTime) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return d.parseString(s)
+}
+
+var (
+	// "2006-01-02T…": RFC 3339 first.
+	dateTimeLayoutsT = []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999"}
+	// "2006-01-02 … -0700 MST": time.Time.String() (SQLite drivers).
+	dateTimeLayoutsZone = []string{"2006-01-02 15:04:05.999999999 -0700 MST", "2006-01-02 15:04:05.999999999 -0700"}
+	// "2006-01-02 …±07:00" or naive "2006-01-02 15:04:05[.fff]".
+	dateTimeLayoutsSpace = []string{"2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05.999999999"}
+	dateTimeLayoutsAll   = []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02T15:04:05.999999999",
+	}
+)
+
+func dateTimeLayoutsFor(s string) []string {
+	if len(s) < 19 {
+		return dateTimeLayoutsAll
+	}
+	switch s[10] {
+	case 'T':
+		return dateTimeLayoutsT
+	case ' ':
+		if strings.IndexByte(s[19:], ' ') >= 0 {
+			return dateTimeLayoutsZone
+		}
+		return dateTimeLayoutsSpace
+	}
+	return dateTimeLayoutsAll
 }

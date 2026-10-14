@@ -19,6 +19,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **CLI: migrations generated in the same second shared a version** (duplicate key in `MigrateUp`); new `migration.NextMigrationVersion`.
 - **CLI: `nitrogen routes` / `nitrogen openapi` found nothing without `--dir`** (the default root `.` was skipped as a hidden directory).
 
+### Changed
+- **405 Method Not Allowed:** a request whose path is registered only for other methods now gets `405` with an `Allow` header instead of `404` (e.g. `POST` on a Resource with `Only: List, Get`). Unknown paths still return 404. New `domain.ErrMethodNotAllowed`.
+- **One log format for HTTP and DB:** `NITRO_LOG_FORMAT=text|json` and `NITRO_LOG_LEVEL` drive both the access log and the DB gateway. The text access log is tagged by status (`[INFO]`, `[WARN]` 4xx, `[ERROR]` 5xx — was always `[DEBUG]`); JSON access lines carry `level` and `msg` like slog. DB gateway text lines share the access-log layout.
+- **Per-query DB logs moved to DEBUG**; queries at or above `NITRO_DB_SLOW_MS` (default 200 ms, `gateway.WithSlowQuery`) log at WARN as `db slow query`.
+
+### Security (auth & HTTP hardening)
+- **JWT TTL defaults:** `NewAuth` without `AccessTokenTTL`/`RefreshTokenTTL` minted tokens that expired at issuance (while answering `expires_in: 900`); zero TTLs now use the documented 15 min / 7 days, and `expires_in` reflects the real TTL.
+- **AuthRoutes:** e-mails are case-insensitive (`Ana@x.com` ≡ `ana@x.com`, no duplicate accounts); `MemoryUserStore.Create` claims the e-mail atomically; passwords over 72 bytes (bcrypt limit) are rejected with 422; store/hash failures are a generic 500 instead of "409 EMAIL_EXISTS" with the internal error text; per-IP rate limit (`DefaultAuthRateLimit` = 20/min, `Auth.WithRateLimit`); new `POST /auth/logout` revokes the refresh and bearer tokens.
+- **Content-Disposition** (`c.File`/`c.Attachment`/`c.CSV`): control characters, quotes and backslashes are dropped, `/` neutralized, and non-ASCII names get an RFC 6266 `filename*` (UTF-8).
+- `golang.org/x/net` → v0.60.0 in every module (GO-2026-6617, GO-2026-6612 reachable from `net/http` users).
+
+### Performance
+- **Telemetry is a no-op when nothing exports** (no OTLP endpoint / `NITRO_OTEL_STDOUT`): the SDK and HTTP tracing middleware are skipped (~3.4× cheaper hello-world request: 5.6 µs/70 allocs → 1.7 µs/9 allocs).
+- **Hello world binary 28.0 MB → 13.5 MB** (9.2 MB with `-s -w`): the OTLP protobuf exporters (~13 MB each) moved to `adapters/otel/v2/otlp`, imported by CLI-generated apps; a startup warning fires if `OTEL_EXPORTER_OTLP_ENDPOINT` is set without it. Generated Makefile/Dockerfile and `nitrogen build` use `-trimpath -ldflags="-s -w"` (`nitrogen build` also targets `./cmd/server` in the CA layout; `--debug` keeps symbols).
+- Resource request path: cached reflect field lookups (`domain.FieldByName`), cached query-param / wire-name variants, allocation-free timestamp defaults, single-allocation `UUID`/`DateTime` JSON, shape-based `DateTime` parsing (SQLite scans no longer allocate a parse error per column). In-process: Memory list −49% (493 → 120 allocs), create −32%, SQLite list −17%, SQLite filtered list −32%.
+- **BLinq `PaginateCollect` skips `COUNT`** when the page is short (the total is exact); full or past-the-end pages still count.
+
+### Fixed (telemetry)
+- **OTLP export never worked with the current SDK:** `resource.Merge` failed with "conflicting Schema URL" (SDK semconv vs v1.24.0), silently disabling telemetry. The service name is now merged schemaless.
+- Incoming W3C `traceparent`/`tracestate`/baggage are extracted, so HTTP spans join the caller's trace (propagator installed with the SDK).
+
+### Added
+- **`sqladapter.StoreFor[T](db)`**: `StoreOf` with the table name from the shared convention (`TableName()` or snake_case plural).
+- **`nitrogen openapi` emits schemas** for Resource routes from the model struct: `<T>` (server-owned fields `readOnly`), `<T>Input`, `<T>Patch`, `<T>List`, an `Error` envelope on 4xx/5xx, exact success codes (201 create, 204 delete) and list query params. `codegen/openapi`: `AddSchema`, `UseErrorSchema`, `RefSchema`, `RouteInfo.ResponseSchema` / `SuccessStatus`.
+- **`nitrogen doctor` compiles the project** (`go build` + `go vet`) and fails when it does not build; `--no-build` skips it.
+- **CI `examples` job** (every example: `go mod tidy -diff`, vet, tests) and `make test-examples`; all example `go.mod` files tidied (`blinq-extras` was missing replaces).
+
 ## [2.0.0] - Unreleased
 
 ### Breaking / migration

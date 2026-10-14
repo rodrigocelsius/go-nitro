@@ -110,7 +110,7 @@ func TestResource_OnlyAndExcept(t *testing.T) {
 	})
 	tc := nitro.NewTestClient(app)
 	tc.AssertStatus(t, tc.Get(t, "/ro"), 200)
-	tc.AssertStatus(t, tc.Post(t, "/ro", `{"title":"no"}`), 404)
+	tc.AssertStatus(t, tc.Post(t, "/ro", `{"title":"no"}`), 405) // path exists, action excluded
 
 	repo2 := nitro.NewMemoryRepo[resItem]()
 	app2 := nitro.New(nitro.Config{DisableDefaults: true})
@@ -121,8 +121,8 @@ func TestResource_OnlyAndExcept(t *testing.T) {
 	tc2 := nitro.NewTestClient(app2)
 	created := tc2.Post(t, "/full", `{"title":"y"}`)
 	tc2.AssertStatus(t, created, 201)
-	// delete should 404
-	tc2.AssertStatus(t, tc2.Delete(t, "/full/missing-id"), 404)
+	// delete is excluded: GET/PATCH still exist on the path → 405
+	tc2.AssertStatus(t, tc2.Delete(t, "/full/missing-id"), 405)
 }
 
 func TestResource_Replace(t *testing.T) {

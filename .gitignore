@@ -18,6 +18,8 @@ examples/v1/validation/validation
 examples/v1/blinq-hello/blinq-hello
 examples/v1/blinq-extras/blinq-extras
 examples/v1/db-blinq/db-blinq
+examples/v1/conventions/conventions
+examples/v1/sql-tx/sql-tx
 examples/v1/db-blinq-handlers/db-blinq-handlers
 examples/v1/db-linq/db-linq
 examples/v1/db-gorm/db-gorm

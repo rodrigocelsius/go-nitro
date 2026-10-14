@@ -110,6 +110,26 @@ func (rt *RadixRouter) Lookup(method, path []byte, c *domain.Ctx) (domain.Handle
 	return h, ok
 }
 
+// AllowedMethods lists the methods registered for path (used to answer 405
+// with an Allow header). Only called after a lookup miss — never on the hot path.
+func (rt *RadixRouter) AllowedMethods(path []byte) []string {
+	var out []string
+	for _, methodNode := range rt.methodRoot.children {
+		method := methodNode.segment
+		if mm, ok := rt.staticRoutes[method]; ok {
+			if _, ok := mm[b2s(path)]; ok {
+				out = append(out, method)
+				continue
+			}
+		}
+		var scratch domain.Ctx
+		if h, ok := radixLookupNoAlloc(methodNode, path, &scratch); ok && h != nil {
+			out = append(out, method)
+		}
+	}
+	return out
+}
+
 // Routes returns all routes registered on this router.
 func (rt *RadixRouter) Routes() []domain.RouteInfo {
 	var routes []domain.RouteInfo

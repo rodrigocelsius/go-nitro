@@ -1,6 +1,10 @@
 package openapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+)
 
 // Default security scheme names.
 const (
@@ -8,9 +12,13 @@ const (
 	SchemeAPIKeyAuth = "apiKeyAuth"
 )
 
+// ErrorSchemaName is the component used for 4xx/5xx bodies ({"error": …}).
+const ErrorSchemaName = "Error"
+
 // Generator builds OpenAPI specs from route information.
 type Generator struct {
-	spec *Spec
+	spec        *Spec
+	errorSchema bool
 }
 
 // NewGenerator creates a new Generator.
@@ -91,6 +99,28 @@ func APIKeyOrBearerAuth() []SecurityRequirement {
 	}
 }
 
+// AddSchema registers components.schemas[name].
+func (g *Generator) AddSchema(name string, schema *Schema) *Generator {
+	if g.spec.Components == nil {
+		g.spec.Components = &Components{}
+	}
+	if g.spec.Components.Schemas == nil {
+		g.spec.Components.Schemas = map[string]*Schema{}
+	}
+	g.spec.Components.Schemas[name] = schema
+	return g
+}
+
+// UseErrorSchema documents every 4xx/5xx response with Nitro's error envelope
+// ({"error": "...", "fields": {...}} on validation failures).
+func (g *Generator) UseErrorSchema() *Generator {
+	g.errorSchema = true
+	return g.AddSchema(ErrorSchemaName, ObjectSchema(map[string]*Schema{
+		"error":  {Type: "string"},
+		"fields": {Type: "object", Description: "Per-field messages (422 validation errors)"},
+	}, "error"))
+}
+
 // AddRoute adds a route to the spec.
 func (g *Generator) AddRoute(info RouteInfo) {
 	pathKey := ToOpenAPIPath(info.Path)
@@ -131,6 +161,36 @@ func (g *Generator) AddRoute(info RouteInfo) {
 		if len(info.Security) > 0 {
 			responses["401"] = Response{Description: "Unauthorized"}
 		}
+		if strings.ContainsAny(info.Path, ":{") {
+			responses["404"] = Response{Description: "Not Found"}
+		}
+	}
+
+	if info.SuccessStatus != 0 {
+		for code := range responses {
+			if code[0] == '2' {
+				delete(responses, code)
+			}
+		}
+		desc := map[int]string{200: "Success", 201: "Created", 204: "No Content"}[info.SuccessStatus]
+		if desc == "" {
+			desc = "Success"
+		}
+		responses[strconv.Itoa(info.SuccessStatus)] = Response{Description: desc}
+	}
+	if info.ResponseSchema != nil {
+		code := successCode(responses, info.Method)
+		r := responses[code]
+		r.Content = map[string]MediaType{"application/json": {Schema: info.ResponseSchema}}
+		responses[code] = r
+	}
+	if g.errorSchema {
+		for code, r := range responses {
+			if code[0] == '4' || code[0] == '5' {
+				r.Content = map[string]MediaType{"application/json": {Schema: RefSchema(ErrorSchemaName)}}
+				responses[code] = r
+			}
+		}
 	}
 
 	operation := &Operation{
@@ -159,6 +219,21 @@ func (g *Generator) AddRoute(info RouteInfo) {
 	case "DELETE":
 		path.Delete = operation
 	}
+}
+
+// successCode picks the 2xx response that carries the body (201 for POST).
+func successCode(responses map[string]Response, method string) string {
+	if method == "POST" {
+		if _, ok := responses["201"]; ok {
+			return "201"
+		}
+	}
+	for _, c := range []string{"200", "201", "202"} {
+		if _, ok := responses[c]; ok {
+			return c
+		}
+	}
+	return "200"
 }
 
 // AddServer adds a server to the spec.

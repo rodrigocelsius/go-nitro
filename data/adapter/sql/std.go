@@ -53,13 +53,19 @@ func (r stdResult) RowsAffected() int64 {
 type stdRows struct {
 	rows *sql.Rows
 	cols []string
+	ptrs []any // Scan scratch, reused across rows
 }
 
 func (r *stdRows) Next() bool { return r.rows.Next() }
 
 func (r *stdRows) Values() ([]any, error) {
+	// dest is returned to the caller, so it is fresh per row; the pointer
+	// slice handed to Scan is only scratch and is reused across rows.
 	dest := make([]any, len(r.cols))
-	ptrs := make([]any, len(r.cols))
+	if cap(r.ptrs) < len(r.cols) {
+		r.ptrs = make([]any, len(r.cols))
+	}
+	ptrs := r.ptrs[:len(r.cols)]
 	for i := range dest {
 		ptrs[i] = &dest[i]
 	}

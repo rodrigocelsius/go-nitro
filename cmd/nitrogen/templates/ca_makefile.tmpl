@@ -4,7 +4,7 @@ run:
 test:
 	go test ./...
 build:
-	go build -o bin/server ./cmd/server
+	go build -trimpath -ldflags="-s -w" -o bin/server ./cmd/server
 scaffold:
 	nitrogen make:scaffold $(NAME) $(FIELDS)
 usecase:

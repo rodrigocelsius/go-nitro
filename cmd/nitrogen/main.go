@@ -147,13 +147,13 @@ Runtime:
   down             docker compose down ([--volumes])
   dev              Hot reload (air)
   routes           List routes
-  build            Compile
+  build            Compile (stripped; ./cmd/server in CA layout; --debug keeps symbols)
   test / cover     Tests and coverage
   migrate          Run migrations (goose)
   migrate:make     Generate SQL migration from model
   seed             List/run seeders
   openapi          Write openapi.json from static route scan ([--bearer] [-o path])
-  doctor           Environment and layout diagnostics ([--db] ping SQL)
+  doctor           Environment, layout and go build/vet ([--db] ping SQL, [--no-build])
   ai:init          Write AGENTS.md, CLAUDE.md, AI.md, .cursor/rules/nitro.mdc, .cursor/prompts/nitro-blinq.md
   audit / security / profile / stress / benchmark
 

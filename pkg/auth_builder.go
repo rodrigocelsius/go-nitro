@@ -3,7 +3,9 @@ package nitro
 import (
 	"errors"
 	"strings"
+	"time"
 
+	"github.com/rodrigocelsius/go-nitro/domain/v2"
 	"github.com/rodrigocelsius/go-nitro/ports/v2"
 )
 
@@ -23,12 +25,30 @@ type UserCreator = ports.UserCreator
 type Auth struct {
 	*AuthUseCase
 	deps AuthDeps
+
+	// Per-client-IP limit shared by AuthRoutes endpoints (credential
+	// stuffing / brute force). Defaults: DefaultAuthRateLimit per minute.
+	rateMax    int
+	rateWindow time.Duration
+}
+
+// DefaultAuthRateLimit is how many AuthRoutes requests (register, login,
+// refresh, logout combined) one client IP may make per minute by default.
+const DefaultAuthRateLimit = 20
+
+// WithRateLimit changes the per-IP limit of AuthRoutes; max <= 0 disables it
+// (only when an upstream gateway already throttles these endpoints).
+func (a *Auth) WithRateLimit(max int, window time.Duration) *Auth {
+	a.rateMax, a.rateWindow = max, window
+	return a
 }
 
 // NewAuth creates an Auth builder with JWT provider and bcrypt hasher.
 // Call WithMemoryStore() or WithStore() before AuthRoutes.
 func NewAuth(cfg AuthConfig) *Auth {
 	a := &Auth{
+		rateMax:    DefaultAuthRateLimit,
+		rateWindow: time.Minute,
 		deps: AuthDeps{
 			TokenProvider: JWTProvider(cfg),
 			PasswordHash:  PasswordHasherAdapter(),
@@ -81,7 +101,8 @@ func (a *Auth) rebuild() *Auth {
 	return a
 }
 
-// AuthRoutes registers POST {prefix}/register, /login, /refresh.
+// AuthRoutes registers POST {prefix}/register, /login, /refresh, /logout,
+// rate-limited per client IP (see WithRateLimit).
 //
 //	auth := nitro.NewAuth(cfg).WithMemoryStore()
 //	app.AuthRoutes("/auth", auth)
@@ -93,10 +114,15 @@ func (a *App) AuthRoutes(prefix string, auth *Auth) *App {
 		return a.fail(errors.New("nitro: AuthRoutes requires WithMemoryStore() or WithStore() before use"))
 	}
 	prefix = "/" + strings.Trim(prefix, "/")
-	g := a.Group(prefix)
+	var mws []Handler
+	if auth.rateMax > 0 && auth.rateWindow > 0 {
+		mws = append(mws, RateLimit(auth.rateMax, auth.rateWindow))
+	}
+	g := a.Group(prefix, mws...)
 	g.Post("/register", authRegisterHandler(auth.AuthUseCase))
 	g.Post("/login", authLoginHandler(auth.AuthUseCase))
 	g.Post("/refresh", authRefreshHandler(auth.AuthUseCase))
+	g.Post("/logout", authLogoutHandler(auth.AuthUseCase))
 	return a
 }
 
@@ -153,16 +179,21 @@ func keycloakRefreshHandler(tokens KeycloakClient) Handler {
 func authRegisterHandler(auth *AuthUseCase) Handler {
 	return func(c *Ctx) error {
 		body, err := Parse[struct {
-			Email    string `json:"email" validate:"required,email"`
-			Password string `json:"password" validate:"required,min=8"`
-			Name     string `json:"name"`
+			Email string `json:"email" validate:"required,email"`
+			// bcrypt only uses the first 72 bytes; longer input is rejected
+			// instead of silently truncated (or failing as an opaque error).
+			Password string `json:"password" validate:"required,min=8,max=72"`
+			Name     string `json:"name" validate:"max=200"`
 		}](c)
 		if err != nil {
 			return err
 		}
 		pair, err := auth.Register(c, body.Email, body.Password, body.Name)
+		if errors.Is(err, domain.ErrEmailAlreadyExists) {
+			return Err(409, "EMAIL_EXISTS", "email already exists")
+		}
 		if err != nil {
-			return Err(409, "EMAIL_EXISTS", err.Error())
+			return err // generic 500: never echo store/hash internals
 		}
 		return c.Created(Map{
 			"access_token":  pair.AccessToken,
@@ -192,6 +223,24 @@ func authLoginHandler(auth *AuthUseCase) Handler {
 			"token_type":    pair.TokenType,
 			"expires_in":    pair.ExpiresIn,
 		})
+	}
+}
+
+// authLogoutHandler revokes the presented tokens: the refresh token from the
+// body and the access token from the Authorization header. Always 204, so it
+// reveals nothing about token validity.
+func authLogoutHandler(auth *AuthUseCase) Handler {
+	return func(c *Ctx) error {
+		var body struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		_ = c.Bind(&body)
+		access := ""
+		if h := c.Header("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
+			access = strings.TrimSpace(h[7:])
+		}
+		auth.RevokeTokens(c, body.RefreshToken, access)
+		return c.NoContent()
 	}
 }
 

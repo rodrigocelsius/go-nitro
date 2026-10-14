@@ -93,17 +93,32 @@ func cmdDev(args []string) {
 	}
 }
 
+// cmdBuild compiles the app: ./cmd/server in the CA layout (else the module
+// root), stripped of symbol/DWARF tables (-s -w, ~30% smaller) and with
+// -trimpath; --debug keeps them for debuggers.
 func cmdBuild(args []string) {
-	output := "bin/app"
-	for i, arg := range args {
-		if arg == "-o" && i+1 < len(args) {
-			output = args[i+1]
-			args = append(args[:i], args[i+2:]...)
-			break
+	pkg, output := ".", "bin/app"
+	if _, err := os.Stat("cmd/server/main.go"); err == nil {
+		pkg, output = "./cmd/server", "bin/server"
+	}
+	debug := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-o":
+			if i+1 < len(args) {
+				output = args[i+1]
+				i++
+			}
+		case "--debug":
+			debug = true
 		}
 	}
 
-	cmd := exec.Command("go", "build", "-o", output, ".")
+	buildArgs := []string{"build", "-o", output}
+	if !debug {
+		buildArgs = append(buildArgs, "-trimpath", "-ldflags=-s -w")
+	}
+	cmd := exec.Command("go", append(buildArgs, pkg)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -155,10 +170,14 @@ func cmdMigrate(args []string) {
 }
 
 func cmdDoctor(args []string) {
+	build := true
 	for _, a := range args {
-		if a == "--db" {
+		switch a {
+		case "--db":
 			cmdDoctorDB()
 			return
+		case "--no-build":
+			build = false
 		}
 	}
 
@@ -226,8 +245,40 @@ func cmdDoctor(args []string) {
 	enrichDoctor()
 	warnStaleTableNameGen()
 	warnStaleModelgen()
+	if build && goMod != "" && !checkBuild() {
+		fmt.Println("\nnitrogen: the project does not compile")
+		os.Exit(1)
+	}
 	fmt.Println("\nnitrogen: all checks passed")
 	fmt.Println("nitrogen: tip — nitrogen doctor --db  to ping SQL")
+}
+
+// checkBuild compiles the module (go vet also type-checks tests), so doctor
+// never reports "all checks passed" for a project that does not build.
+func checkBuild() bool {
+	fmt.Println("Build:")
+	ok := true
+	for _, step := range [][]string{{"build", "./..."}, {"vet", "./..."}} {
+		out, err := exec.Command("go", step...).CombinedOutput()
+		if err == nil {
+			fmt.Printf("  ✓ go %s\n", strings.Join(step, " "))
+			continue
+		}
+		ok = false
+		fmt.Printf("  ✗ go %s\n", strings.Join(step, " "))
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) > 12 {
+			lines = append(lines[:12], fmt.Sprintf("… (%d more lines)", len(lines)-12))
+		}
+		for _, l := range lines {
+			fmt.Printf("      %s\n", l)
+		}
+		if strings.Contains(string(out), "go mod tidy") || strings.Contains(string(out), "no required module provides") {
+			fmt.Println("  tip — run: go mod tidy")
+		}
+		break // vet repeats build errors
+	}
+	return ok
 }
 
 func cmdBenchmark(args []string) {

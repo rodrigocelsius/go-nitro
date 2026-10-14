@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1282,14 +1283,38 @@ func (c *FastCtx) CSV(filename string, header []string, rows [][]string) error {
 	return c.Attachment(filename, buf.Bytes(), "text/csv; charset=utf-8")
 }
 
+// contentDisposition builds an RFC 6266 header from an untrusted file name:
+// control characters, quotes and backslashes are dropped (no header
+// injection, no escaped closing quote), path separators are neutralized, and
+// non-ASCII names get an ASCII fallback plus filename*=UTF-8”<pct-encoded>.
 func contentDisposition(disp, name string) string {
-	name = strings.ReplaceAll(name, `"`, "")
-	name = strings.ReplaceAll(name, "\n", "")
-	name = strings.ReplaceAll(name, "\r", "")
-	if name == "" {
-		name = "download"
+	var ascii strings.Builder
+	clean := make([]rune, 0, len(name))
+	nonASCII := false
+	for _, r := range name {
+		switch {
+		case r < 0x20 || r == 0x7f || r == '"' || r == '\\':
+			continue
+		case r == '/':
+			r = '_'
+		}
+		clean = append(clean, r)
+		if r > 0x7e {
+			nonASCII = true
+			ascii.WriteByte('_')
+		} else {
+			ascii.WriteRune(r)
+		}
 	}
-	return fmt.Sprintf(`%s; filename="%s"`, disp, name)
+	fallback := strings.TrimSpace(ascii.String())
+	if fallback == "" {
+		fallback = "download"
+	}
+	h := fmt.Sprintf(`%s; filename="%s"`, disp, fallback)
+	if nonASCII {
+		h += "; filename*=UTF-8''" + url.PathEscape(string(clean))
+	}
+	return h
 }
 
 // detectContentType detects content-type from byte prefix or extension.

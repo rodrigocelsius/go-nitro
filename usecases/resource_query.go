@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 	"github.com/rodrigocelsius/go-nitro/usecases/v2/transform"
@@ -24,19 +25,46 @@ func queryParam(c *domain.Ctx, name string, camelAliases bool) string {
 	if !camelAliases || name == "" {
 		return ""
 	}
-	snake := transform.SnakeCase(name)
+	snake, camel := nameVariants(name)
 	if snake != name {
 		if v := c.QueryParam(snake); v != "" {
 			return v
 		}
 	}
-	camel := transform.CamelCase(name)
 	if camel != name {
 		if v := c.QueryParam(camel); v != "" {
 			return v
 		}
 	}
 	return ""
+}
+
+// Query-param names come from ResourceOpts (a bounded set), so their
+// snake/camel variants and "<field>_<op>" names are computed once instead of
+// on every list request. Never cache request-supplied strings here.
+var (
+	variantCache sync.Map // name → [2]string{snake, camel}
+	opNameCache  sync.Map // [2]string{field, op} → field_op
+)
+
+func nameVariants(name string) (snake, camel string) {
+	if v, ok := variantCache.Load(name); ok {
+		p := v.([2]string)
+		return p[0], p[1]
+	}
+	p := [2]string{transform.SnakeCase(name), transform.CamelCase(name)}
+	variantCache.Store(name, p)
+	return p[0], p[1]
+}
+
+func opParamName(field, op string) string {
+	key := [2]string{field, op}
+	if v, ok := opNameCache.Load(key); ok {
+		return v.(string)
+	}
+	n := field + "_" + op
+	opNameCache.Store(key, n)
+	return n
 }
 
 // buildListQuery builds ListQuery from query params + ResourceOpts.
@@ -75,7 +103,7 @@ func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.
 	// Operator suffixes on any Filterable field: ?price_gte=10&price_lt=50&name_contains=ab
 	for _, name := range opts.Filterable {
 		for _, op := range filterOpSuffixes {
-			if v := queryParam(c, name+"_"+op, camel); v != "" {
+			if v := queryParam(c, opParamName(name, op), camel); v != "" {
 				add(name, v, op)
 			}
 		}
@@ -102,11 +130,25 @@ func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.
 		canonical := sortKey
 		ok := false
 		for _, a := range opts.Sortable {
-			if a == sortKey || (camel && (a == transform.SnakeCase(sortKey) || a == transform.CamelCase(sortKey) ||
-				transform.SnakeCase(a) == sortKey || transform.CamelCase(a) == sortKey)) {
-				ok = true
-				canonical = a
+			if a == sortKey {
+				ok, canonical = true, a
 				break
+			}
+			if camel {
+				if aSnake, aCamel := nameVariants(a); aSnake == sortKey || aCamel == sortKey {
+					ok, canonical = true, a
+					break
+				}
+			}
+		}
+		if !ok && camel {
+			// Rare spellings (e.g. "UnitPrice"): convert the request value once.
+			snake, cam := transform.SnakeCase(sortKey), transform.CamelCase(sortKey)
+			for _, a := range opts.Sortable {
+				if a == snake || a == cam {
+					ok, canonical = true, a
+					break
+				}
 			}
 		}
 		if ok {

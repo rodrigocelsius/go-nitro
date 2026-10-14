@@ -18,6 +18,8 @@ Nitro works with zero configuration. Every default below is covered by the execu
 | Errors | `{"error": "..."}`; opt in to RFC 9457 with `nitro.ProblemDetails()` | `Config.ErrorHandler` |
 | Config mistakes | never panic mid-chain: collected and returned by `app.Err()` / `Listen` | — |
 | Typed handlers / `BindQuery` | path and query params bind to input fields by JSON (snake_case) name; body by JSON | struct tags |
+| Logs | one format for HTTP access + DB lines: `NITRO_LOG_FORMAT=text` (default, `[LEVEL] - date - …`) or `json` (slog shape: `time`/`level`/`msg`); `NITRO_LOG_LEVEL` (default `info`); access level follows status (4xx WARN, 5xx ERROR); DB queries are DEBUG, slow ones (`NITRO_DB_SLOW_MS`, default 200) WARN | `LoggerConfig.Format`, `gateway.WithLogger` / `WithSlowQuery` |
+| Wrong method | a path registered for other methods answers **405** with an `Allow` header (unknown paths stay 404) | — |
 
 ## List filters (Resource)
 

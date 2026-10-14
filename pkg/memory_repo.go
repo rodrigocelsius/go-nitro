@@ -146,7 +146,7 @@ func entityID(entity any) string {
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
-	f := rv.FieldByName("ID")
+	f := domain.FieldByName(rv, "ID")
 	if !f.IsValid() {
 		return ""
 	}
@@ -173,7 +173,7 @@ func setEntityID(entity any, id string) {
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
-	f := rv.FieldByName("ID")
+	f := domain.FieldByName(rv, "ID")
 	if !f.IsValid() || !f.CanSet() {
 		return
 	}
@@ -202,7 +202,7 @@ func isSoftDeleted(entity any) bool {
 		}
 		rv = rv.Elem()
 	}
-	f := rv.FieldByName("DeletedAt")
+	f := domain.FieldByName(rv, "DeletedAt")
 	if !f.IsValid() {
 		return false
 	}
@@ -219,7 +219,7 @@ func isSoftDeleted(entity any) bool {
 		if f.Type() == reflect.TypeOf(DateTime{}) {
 			return !f.Interface().(DateTime).IsZero()
 		}
-		if vf := f.FieldByName("Valid"); vf.IsValid() && vf.Kind() == reflect.Bool {
+		if vf := domain.FieldByName(f, "Valid"); vf.IsValid() && vf.Kind() == reflect.Bool {
 			return vf.Bool()
 		}
 	}
@@ -231,7 +231,7 @@ func setDeletedAt(entity any, t time.Time) {
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
-	f := rv.FieldByName("DeletedAt")
+	f := domain.FieldByName(rv, "DeletedAt")
 	if !f.IsValid() || !f.CanSet() {
 		return
 	}
@@ -248,8 +248,8 @@ func setDeletedAt(entity any, t time.Time) {
 			f.Set(reflect.ValueOf(t))
 		} else if f.Type() == reflect.TypeOf(DateTime{}) {
 			f.Set(reflect.ValueOf(DateTimeFrom(t)))
-		} else if vf := f.FieldByName("Valid"); vf.IsValid() && vf.CanSet() {
-			if tf := f.FieldByName("Time"); tf.IsValid() && tf.CanSet() {
+		} else if vf := domain.FieldByName(f, "Valid"); vf.IsValid() && vf.CanSet() {
+			if tf := domain.FieldByName(f, "Time"); tf.IsValid() && tf.CanSet() {
 				tf.Set(reflect.ValueOf(t))
 				vf.SetBool(true)
 			}
@@ -270,8 +270,8 @@ func preserveDeletedAt(from, to any) {
 	if rvTo.Kind() == reflect.Ptr {
 		rvTo = rvTo.Elem()
 	}
-	src := rvFrom.FieldByName("DeletedAt")
-	dst := rvTo.FieldByName("DeletedAt")
+	src := domain.FieldByName(rvFrom, "DeletedAt")
+	dst := domain.FieldByName(rvTo, "DeletedAt")
 	if !src.IsValid() || !dst.IsValid() || !dst.CanSet() {
 		return
 	}
@@ -287,8 +287,8 @@ func copyTimeField(from, to any, name string) {
 	if rvTo.Kind() == reflect.Ptr {
 		rvTo = rvTo.Elem()
 	}
-	src := rvFrom.FieldByName(name)
-	dst := rvTo.FieldByName(name)
+	src := domain.FieldByName(rvFrom, name)
+	dst := domain.FieldByName(rvTo, name)
 	if !src.IsValid() || !dst.IsValid() || !dst.CanSet() {
 		return
 	}

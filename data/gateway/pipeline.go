@@ -200,10 +200,14 @@ func (g *Gateway) logQuery(operation string, duration time.Duration, rowCount in
 		"args", argsCount,
 		"cache_hit", cacheHit,
 	}
-	if cacheHit {
+	switch {
+	case cacheHit:
 		g.logger.Debug("db query completed (cache hit)", attrs...)
-	} else {
-		g.logger.Info("db query completed", attrs...)
+	case g.slow > 0 && duration >= g.slow:
+		g.logger.Warn("db slow query", append(attrs, "slow_ms", g.slow.Milliseconds())...)
+	default:
+		// Per-query lines are noise at INFO; NITRO_LOG_LEVEL=debug shows them.
+		g.logger.Debug("db query completed", attrs...)
 	}
 }
 

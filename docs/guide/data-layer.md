@@ -253,7 +253,7 @@ gw := gateway.New(exec,
 
 | Option | Default | Turn off with |
 |--------|---------|-------------|
-| Logger (slog stderr) | ON | `DisableLogger()` |
+| Logger (slog stderr) | ON — queries at DEBUG, slow ones (`NITRO_DB_SLOW_MS`, default 200 ms) at WARN; format/level follow `NITRO_LOG_FORMAT` / `NITRO_LOG_LEVEL` | `DisableLogger()` / `WithLogger(l)` / `WithSlowQuery(d)` |
 | Tracer (OTel / nop) | ON | `DisableTracer()` / `DisableTelemetry` / `NITRO_OTEL=0` — DB spans are **children** of the HTTP span (`c.Context()`); export OTLP (`OTEL_EXPORTER_OTLP_*`); without an endpoint it will not go to the console (`NITRO_OTEL_STDOUT=1` debug only) |
 | Meter (OTel / nop) | ON | `DisableMeter()` / `DisableTelemetry` / `NITRO_OTEL=0` — attrs `operation` + `status=ok\|error` |
 | Cache | OFF | `DisableCache()` / only on with `WithCache` |

@@ -28,15 +28,18 @@ func TestResourceCache_TenantIsolationAndInvalidation(t *testing.T) {
 	A, B := "01900000-0000-7000-8000-00000000000a", "01900000-0000-7000-8000-00000000000b"
 	post(A, `{"title":"a1"}`)
 	_ = list(A) // warm cache
-	if strings.Contains(list(B), "a1") {
+	// Match the title field, not a bare substring: random UUIDs in the body
+	// may contain "a1"/"a2" by chance (this test used to flake on that).
+	has := func(body, title string) bool { return strings.Contains(body, `"title":"`+title+`"`) }
+	if has(list(B), "a1") {
 		t.Fatal("tenant B sees tenant A via cache")
 	}
 	post(A, `{"title":"a2"}`)
-	if !strings.Contains(list(A), "a2") {
+	if !has(list(A), "a2") {
 		t.Fatal("cache not invalidated after create")
 	}
 	post(B, `{"title":"b1"}`)
-	if l := list(B); !strings.Contains(l, "b1") || strings.Contains(l, "a2") {
+	if l := list(B); !has(l, "b1") || has(l, "a2") {
 		t.Fatalf("B list wrong: %s", l)
 	}
 }

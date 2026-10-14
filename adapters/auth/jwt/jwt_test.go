@@ -319,3 +319,22 @@ func TestProvider_RevocationFailClosed(t *testing.T) {
 		t.Fatal("expected fail-closed when revocation store errors")
 	}
 }
+
+// Zero TTLs fall back to the documented defaults instead of minting tokens
+// that are already expired.
+func TestNew_ZeroTTLUsesDefaults(t *testing.T) {
+	p, err := New(domain.AuthConfig{JWTSecret: "0123456789abcdef0123456789abcdef-zero-ttl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.AccessTokenTTL() != DefaultAccessTokenTTL {
+		t.Fatalf("access ttl = %v", p.AccessTokenTTL())
+	}
+	tok, err := p.GenerateAccessToken(context.Background(), &domain.User{ID: "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ValidateToken(context.Background(), tok); err != nil {
+		t.Fatalf("fresh token must be valid with default TTL: %v", err)
+	}
+}

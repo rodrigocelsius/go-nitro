@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
+	"go.opentelemetry.io/otel"
 )
 
 const localStartNS = "_otel_start_ns"
@@ -50,10 +51,12 @@ func TracingPair(tracer domain.Tracer) (pre, post domain.Handler) {
 			ctx  context.Context
 			span domain.Span
 		)
+		// Join the caller's trace (W3C traceparent/tracestate, baggage).
+		parent := otel.GetTextMapPropagator().Extract(c.Context(), headerCarrier{c})
 		if st, ok := tracer.(serverTracer); ok {
-			ctx, span = st.StartServer(c.Context(), name)
+			ctx, span = st.StartServer(parent, name)
 		} else {
-			ctx, span = tracer.Start(c.Context(), name)
+			ctx, span = tracer.Start(parent, name)
 		}
 		c.SetContext(ctx)
 		span.SetAttribute("http.method", c.Method())
@@ -68,6 +71,13 @@ func TracingPair(tracer domain.Tracer) (pre, post domain.Handler) {
 	post = TracingPost()
 	return pre, post
 }
+
+// headerCarrier reads propagation headers from the request.
+type headerCarrier struct{ c *domain.Ctx }
+
+func (h headerCarrier) Get(key string) string { return h.c.HeaderParam(key) }
+func (h headerCarrier) Set(string, string)    {}
+func (h headerCarrier) Keys() []string        { return nil }
 
 // MetricsMiddleware is the pre of MetricsPair.
 func MetricsMiddleware(meter domain.Meter) domain.Handler {

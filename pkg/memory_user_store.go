@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
 // MemoryUserStore is an in-memory UserLookup + UserCreator for development/tests.
@@ -21,7 +23,7 @@ func NewMemoryUserStore() *MemoryUserStore {
 }
 
 func (s *MemoryUserStore) FindByEmail(_ context.Context, email string) (*User, error) {
-	u, ok := s.byEmail.Get(email)
+	u, ok := s.byEmail.Get(NormalizeEmail(email))
 	if !ok {
 		return nil, NotFound("user not found")
 	}
@@ -36,7 +38,13 @@ func (s *MemoryUserStore) FindByID(_ context.Context, id string) (*User, error) 
 	return u, nil
 }
 
+// Create stores a user. The e-mail is unique (case-insensitive) and claimed
+// atomically, so two concurrent registrations cannot both succeed.
 func (s *MemoryUserStore) Create(_ context.Context, user *User) error {
+	user.Email = NormalizeEmail(user.Email)
+	if !s.byEmail.SetIfAbsent(user.Email, user) {
+		return domain.ErrEmailAlreadyExists
+	}
 	id := NextIDString()
 	user.ID = strings.TrimSpace(user.ID)
 	if user.ID == "" {
@@ -52,7 +60,6 @@ func (s *MemoryUserStore) Create(_ context.Context, user *User) error {
 	}
 	user.UpdatedAt = now
 	s.users.Set(user.ID, user)
-	s.byEmail.Set(user.Email, user)
 	return nil
 }
 

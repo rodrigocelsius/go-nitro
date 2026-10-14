@@ -7,9 +7,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/redis/go-redis/v9"
 	sqladapter "github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2"
 	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/rodrigocelsius/go-nitro/examples/v1/cleanarch-blinq/v2/internal/config"
 	"github.com/rodrigocelsius/go-nitro/examples/v1/cleanarch-blinq/v2/internal/handler"

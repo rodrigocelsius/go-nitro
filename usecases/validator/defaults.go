@@ -117,7 +117,31 @@ func applyDefaultsStruct(rv reflect.Value, raw map[string]any) {
 
 // wireNames returns JSON / form / query tag names used to detect key presence
 // (BodyParser form/query builds presence maps with these keys).
+// fieldNameKey identifies a struct field definition; names derived from it
+// are pure functions of (name, tag), so they are computed once (bounded by the
+// number of fields in the program, never by request input).
+type fieldNameKey struct {
+	name string
+	tag  reflect.StructTag
+}
+
+var (
+	jsonNameCache sync.Map // fieldNameKey → string
+	wireNameCache sync.Map // fieldNameKey → []string (read-only)
+)
+
+// wireNames lists the keys a field may arrive under (cached; do not mutate).
 func wireNames(f reflect.StructField) []string {
+	key := fieldNameKey{f.Name, f.Tag}
+	if v, ok := wireNameCache.Load(key); ok {
+		return v.([]string)
+	}
+	out := computeWireNames(f)
+	wireNameCache.Store(key, out)
+	return out
+}
+
+func computeWireNames(f reflect.StructField) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	add := func(name string) {

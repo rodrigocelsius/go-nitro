@@ -71,8 +71,8 @@ func TestApp_MethodMismatch(t *testing.T) {
 	ctx := newTestCtx("POST", "/users", nil)
 	handler(ctx)
 
-	if ctx.Response.StatusCode() != 404 {
-		t.Fatalf("expected status 404 for method mismatch, got %d", ctx.Response.StatusCode())
+	if ctx.Response.StatusCode() != 405 {
+		t.Fatalf("expected status 405 for method mismatch, got %d", ctx.Response.StatusCode())
 	}
 }
 

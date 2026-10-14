@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -13,6 +14,7 @@ type scannedRoute struct {
 	path   string
 	file   string
 	line   int
+	model  string // Resource model type name (e.g. "Product"), when known
 }
 
 func collectGoFiles(root string) []string {
@@ -99,7 +101,7 @@ func scanProjectRoutes(root string) []scannedRoute {
 							path = "/" + path
 						}
 					}
-					routes = append(routes, scannedRoute{strings.ToUpper(method), path, f, i + 1})
+					routes = append(routes, scannedRoute{strings.ToUpper(method), path, f, i + 1, ""})
 				}
 
 				for _, resName := range []string{"Resource", "ResourceWith"} {
@@ -112,11 +114,12 @@ func scanProjectRoutes(root string) []scannedRoute {
 						continue
 					}
 					base := path
+					model := resourceModelFromCall(trimmed[len(resPrefix):])
 					for _, m := range []string{"GET", "POST"} {
-						routes = append(routes, scannedRoute{m, base, f, i + 1})
+						routes = append(routes, scannedRoute{m, base, f, i + 1, model})
 					}
 					for _, m := range []string{"GET", "PATCH", "DELETE"} {
-						routes = append(routes, scannedRoute{m, base + "/:id", f, i + 1})
+						routes = append(routes, scannedRoute{m, base + "/:id", f, i + 1, model})
 					}
 				}
 
@@ -132,11 +135,11 @@ func scanProjectRoutes(root string) []scannedRoute {
 					prefix = "/" + strings.Trim(prefix, "/")
 					if authName == "AuthRoutes" {
 						for _, p := range []string{"/register", "/login", "/refresh"} {
-							routes = append(routes, scannedRoute{"POST", prefix + p, f, i + 1})
+							routes = append(routes, scannedRoute{"POST", prefix + p, f, i + 1, ""})
 						}
 					} else {
 						for _, p := range []string{"/login", "/refresh"} {
-							routes = append(routes, scannedRoute{"POST", prefix + p, f, i + 1})
+							routes = append(routes, scannedRoute{"POST", prefix + p, f, i + 1, ""})
 						}
 					}
 				}
@@ -153,11 +156,15 @@ func scanProjectRoutes(root string) []scannedRoute {
 						if !strings.HasPrefix(path, "/") {
 							path = "/" + path
 						}
+						model := resourceModelFromCall(rest)
+						if model == "" {
+							model = modelOfRepoVar(string(data), rest[comma+1:])
+						}
 						for _, m := range []string{"GET", "POST"} {
-							routes = append(routes, scannedRoute{m, path, f, i + 1})
+							routes = append(routes, scannedRoute{m, path, f, i + 1, model})
 						}
 						for _, m := range []string{"GET", "PATCH", "DELETE"} {
-							routes = append(routes, scannedRoute{m, path + "/:id", f, i + 1})
+							routes = append(routes, scannedRoute{m, path + "/:id", f, i + 1, model})
 						}
 					}
 				}
@@ -206,6 +213,70 @@ func resourcePathFromCall(rest string, forceQuoted bool) string {
 		return ""
 	}
 	return "/" + toSnake(pluralize(name))
+}
+
+// resourceModelFromCall finds the model type in a Resource call:
+// &model.Product{} / &Product{}, or a type argument such as
+// nitro.NewMemoryRepo[Todo]() / nitro.Resource[Todo](…). Returns "" if unknown.
+func resourceModelFromCall(rest string) string {
+	for off := 0; ; {
+		i := strings.Index(rest[off:], "&")
+		if i < 0 {
+			break
+		}
+		at := off + i + 1
+		name := identAt(rest[at:])
+		if name != "" && strings.HasPrefix(rest[at+len(name):], "{") && lastSegment(name) != "ResourceConfig" {
+			return lastSegment(name)
+		}
+		off = at
+	}
+	if i := strings.Index(rest, "["); i >= 0 {
+		if name := identAt(rest[i+1:]); name != "" && strings.HasPrefix(rest[i+1+len(name):], "]") {
+			return lastSegment(name)
+		}
+	}
+	return ""
+}
+
+// modelOfRepoVar resolves the model of nitro.Resource(app, "/x", repo, …) from
+// the repo variable's assignment in the same file (repo := nitro.NewMemoryRepo[Item]()).
+// args starts at the path argument.
+func modelOfRepoVar(src, args string) string {
+	comma := strings.Index(args, ",")
+	if comma < 0 {
+		return ""
+	}
+	v := identAt(strings.TrimSpace(args[comma+1:]))
+	if v == "" || strings.Contains(v, ".") {
+		return ""
+	}
+	re := regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(v) + `\s*:?=\s*[^\n]*?\[([A-Za-z_][\w.]*)\]`)
+	if m := re.FindStringSubmatch(src); m != nil {
+		return lastSegment(m[1])
+	}
+	return ""
+}
+
+// identAt returns the (possibly package-qualified) identifier at the start of s.
+func identAt(s string) string {
+	end := 0
+	for end < len(s) {
+		c := s[end]
+		if c == '_' || c == '.' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || end > 0 && c >= '0' && c <= '9' {
+			end++
+			continue
+		}
+		break
+	}
+	return s[:end]
+}
+
+func lastSegment(name string) string {
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 func extractQuoted(s string) string {

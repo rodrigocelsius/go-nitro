@@ -125,9 +125,9 @@ Do not use `make:migration` (removed).
 | `down` | `docker compose down` (`--volumes` optional) |
 | `dev` | Hot reload (`air` if available) |
 | `routes` | List routes |
-| `openapi` | Write `openapi.json` from static route scan (`--bearer`, `-o`) |
+| `openapi` | Write `openapi.json` from static route scan (`--bearer`, `-o`). Resource routes get schemas from the model struct: `<T>` (server-owned fields `readOnly`), `<T>Input` (POST body), `<T>Patch` (PATCH body), `<T>List` (paginated envelope), plus `Error` on 4xx/5xx; JSON names follow the snake_case convention |
 | `test` / `cover` | Tests and coverage |
-| `doctor` | Go/git + layout + AI rules; Go 1.25+ when SQL present; warns on `*_tablename_gen.go` |
+| `doctor` | Go/git + layout + AI rules; Go 1.25+ when SQL present; warns on `*_tablename_gen.go`; runs `go build` + `go vet` and fails if the project does not compile (`--no-build` skips) |
 | `doctor --db` | Ping via `sqladapter.OpenEnv` (actionable tips) |
 | `seed` | Runs `cmd/seed` (auto-generated from `Seed*` when missing) |
 | `audit` / `security` / `stress` / `profile` | Ops |

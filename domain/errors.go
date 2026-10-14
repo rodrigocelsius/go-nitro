@@ -51,6 +51,19 @@ func (e *NotFoundError) Error() string   { return e.Message }
 func (e *NotFoundError) StatusCode() int { return 404 }
 func (e *NotFoundError) Body() any       { return map[string]string{"error": e.Message} }
 
+// MethodNotAllowedError represents a 405 error: the path exists, but not for
+// the request method (the router sets the Allow header).
+type MethodNotAllowedError struct {
+	Message string
+}
+
+func (e *MethodNotAllowedError) Error() string   { return e.Message }
+func (e *MethodNotAllowedError) StatusCode() int { return 405 }
+func (e *MethodNotAllowedError) Body() any       { return map[string]string{"error": e.Message} }
+
+// ErrMethodNotAllowed is a reusable allocation-free 405 error.
+var ErrMethodNotAllowed = &MethodNotAllowedError{Message: "method not allowed"}
+
 // Is implements errors.Is for NotFoundError so any NotFoundError
 // matches domain.ErrNotFound via errors.Is.
 func (e *NotFoundError) Is(target error) bool {

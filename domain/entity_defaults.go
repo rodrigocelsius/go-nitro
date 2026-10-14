@@ -44,7 +44,7 @@ func ApplyEntityDefaults(entity any, d EntityDefaults, isCreate bool) {
 }
 
 func setIDIfEmpty(rv reflect.Value) {
-	f := rv.FieldByName("ID")
+	f := FieldByName(rv, "ID")
 	if !f.IsValid() || !f.CanSet() {
 		return
 	}
@@ -63,43 +63,49 @@ func setIDIfEmpty(rv reflect.Value) {
 }
 
 func setTimeIfZero(rv reflect.Value, name string, t time.Time, dt temporal.DateTime) {
-	f := rv.FieldByName(name)
-	if !f.IsValid() || !f.CanSet() {
+	f := FieldByName(rv, name)
+	if !f.IsValid() || !f.CanAddr() || !f.CanSet() {
 		return
 	}
-	switch f.Type() {
-	case reflect.TypeOf(time.Time{}):
-		if f.Interface().(time.Time).IsZero() {
-			f.Set(reflect.ValueOf(t))
+	// Work through the field's address: Interface() on a struct value boxes
+	// (allocates) on every request.
+	switch p := f.Addr().Interface().(type) {
+	case *time.Time:
+		if p.IsZero() {
+			*p = t
 		}
-	case reflect.TypeOf((*time.Time)(nil)):
-		if f.IsNil() {
-			f.Set(reflect.ValueOf(&t))
+	case **time.Time:
+		if *p == nil {
+			tt := t
+			*p = &tt
 		}
-	case reflect.TypeOf(temporal.DateTime{}):
-		if f.Interface().(temporal.DateTime).IsZero() {
-			f.Set(reflect.ValueOf(dt))
+	case *temporal.DateTime:
+		if p.IsZero() {
+			*p = dt
 		}
-	case reflect.TypeOf((*temporal.DateTime)(nil)):
-		if f.IsNil() {
-			f.Set(reflect.ValueOf(&dt))
+	case **temporal.DateTime:
+		if *p == nil {
+			d := dt
+			*p = &d
 		}
 	}
 }
 
 func setTimeField(rv reflect.Value, name string, t time.Time, dt temporal.DateTime) {
-	f := rv.FieldByName(name)
-	if !f.IsValid() || !f.CanSet() {
+	f := FieldByName(rv, name)
+	if !f.IsValid() || !f.CanAddr() || !f.CanSet() {
 		return
 	}
-	switch f.Type() {
-	case reflect.TypeOf(time.Time{}):
-		f.Set(reflect.ValueOf(t))
-	case reflect.TypeOf((*time.Time)(nil)):
-		f.Set(reflect.ValueOf(&t))
-	case reflect.TypeOf(temporal.DateTime{}):
-		f.Set(reflect.ValueOf(dt))
-	case reflect.TypeOf((*temporal.DateTime)(nil)):
-		f.Set(reflect.ValueOf(&dt))
+	switch p := f.Addr().Interface().(type) {
+	case *time.Time:
+		*p = t
+	case **time.Time:
+		tt := t
+		*p = &tt
+	case *temporal.DateTime:
+		*p = dt
+	case **temporal.DateTime:
+		d := dt
+		*p = &d
 	}
 }

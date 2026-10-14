@@ -17,6 +17,7 @@ type Gateway struct {
 	logger   domain.Logger
 	cache    domain.Cache
 	cacheTTL time.Duration
+	slow     time.Duration
 }
 
 // Config configures the Gateway.
@@ -36,6 +37,10 @@ type Config struct {
 
 	// CacheTTL is the SELECT cache TTL (default DefaultCacheTTL).
 	CacheTTL time.Duration
+
+	// SlowQuery: successful queries log at DEBUG; at or above this duration
+	// they log at WARN ("db slow query"). Default NITRO_DB_SLOW_MS or 200ms.
+	SlowQuery time.Duration
 }
 
 // Option is a functional configuration option.
@@ -66,6 +71,11 @@ func WithCacheTTL(d time.Duration) Option {
 	return func(cfg *Config) { cfg.CacheTTL = d }
 }
 
+// WithSlowQuery sets the duration from which a successful query logs at WARN.
+func WithSlowQuery(d time.Duration) Option {
+	return func(c *Config) { c.SlowQuery = d }
+}
+
 // DisableLogger turns off query logs.
 func DisableLogger() Option {
 	return func(c *Config) { c.DisableLogger = true }
@@ -92,7 +102,7 @@ func DisableObservability() Option {
 }
 
 // New creates a Gateway with observability on by default:
-//   - Logger: slog text on stderr
+//   - Logger: stderr, NITRO_LOG_FORMAT/NITRO_LOG_LEVEL; queries at DEBUG, slow ones (NITRO_DB_SLOW_MS) at WARN
 //   - Tracer / Meter: domain.DefaultTracer/Meter (OTel after otel.Ensure; otherwise nop)
 //   - Cache: off (use WithCache)
 //
@@ -100,10 +110,11 @@ func DisableObservability() Option {
 // Env: NITRO_DB_QUIET=1 (pgx.Open) turns everything off.
 func New(executor SQLExecutor, opts ...Option) *Gateway {
 	cfg := Config{
-		Executor: executor,
-		Logger:   defaultLogger(),
-		Tracer:   defaultTracer(),
-		Meter:    defaultMeter(),
+		Executor:  executor,
+		Logger:    defaultLogger(),
+		Tracer:    defaultTracer(),
+		Meter:     defaultMeter(),
+		SlowQuery: domain.SlowQueryFromEnv(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -120,6 +131,7 @@ func New(executor SQLExecutor, opts ...Option) *Gateway {
 		logger:   cfg.Logger,
 		cache:    cfg.Cache,
 		cacheTTL: ttl,
+		slow:     cfg.SlowQuery,
 	}
 }
 

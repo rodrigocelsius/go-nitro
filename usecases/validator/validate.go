@@ -171,12 +171,18 @@ func validateDive(path string, field reflect.StructField, value reflect.Value, d
 // detection: explicit `json` tag → snake_case(field name) (same default used
 // when the tag is omitted entirely — see usecases/jsontag).
 func jsonFieldName(field reflect.StructField) string {
+	key := fieldNameKey{field.Name, field.Tag}
+	if v, ok := jsonNameCache.Load(key); ok {
+		return v.(string)
+	}
+	name := transform.SnakeCase(field.Name)
 	if jsonTag := field.Tag.Get("json"); jsonTag != "" {
-		if name := strings.Split(jsonTag, ",")[0]; name != "" && name != "-" {
-			return name
+		if n, _, _ := strings.Cut(jsonTag, ","); n != "" && n != "-" {
+			name = n
 		}
 	}
-	return transform.SnakeCase(field.Name)
+	jsonNameCache.Store(key, name)
+	return name
 }
 
 func joinPath(prefix, name string) string {

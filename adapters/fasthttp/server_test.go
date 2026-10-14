@@ -199,8 +199,39 @@ func TestApp_Handler_MethodNotAllowed(t *testing.T) {
 	ctx.Request.Header.SetMethod("POST")
 	app.Handler()(ctx)
 
-	if ctx.Response.StatusCode() != 404 {
-		t.Errorf("StatusCode = %d, want 404 for wrong method", ctx.Response.StatusCode())
+	if ctx.Response.StatusCode() != 405 {
+		t.Errorf("StatusCode = %d, want 405 for wrong method", ctx.Response.StatusCode())
+	}
+	if got := string(ctx.Response.Header.Peek("Allow")); got != "GET, OPTIONS" {
+		t.Errorf("Allow = %q, want \"GET, OPTIONS\"", got)
+	}
+}
+
+// A path that exists under several methods (dynamic segment) lists them all;
+// an unknown path stays 404 without an Allow header.
+func TestApp_Handler_MethodNotAllowed_DynamicPath(t *testing.T) {
+	app := New()
+	app.Get("/items/:id", func(c *domain.Ctx) error { return nil })
+	app.Patch("/items/:id", func(c *domain.Ctx) error { return nil })
+	app.Delete("/items/:id", func(c *domain.Ctx) error { return nil })
+
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetRequestURI("/items/42")
+	ctx.Request.Header.SetMethod("PUT")
+	app.Handler()(ctx)
+	if ctx.Response.StatusCode() != 405 {
+		t.Fatalf("StatusCode = %d, want 405", ctx.Response.StatusCode())
+	}
+	if got := string(ctx.Response.Header.Peek("Allow")); got != "DELETE, GET, OPTIONS, PATCH" {
+		t.Errorf("Allow = %q", got)
+	}
+
+	ctx = &fasthttp.RequestCtx{}
+	ctx.Request.SetRequestURI("/nope/42")
+	ctx.Request.Header.SetMethod("PUT")
+	app.Handler()(ctx)
+	if ctx.Response.StatusCode() != 404 || len(ctx.Response.Header.Peek("Allow")) != 0 {
+		t.Errorf("unknown path: status=%d allow=%q", ctx.Response.StatusCode(), ctx.Response.Header.Peek("Allow"))
 	}
 }
 

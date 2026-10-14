@@ -118,9 +118,9 @@ services:
 	makeTargets.WriteString("\nbuild:\n")
 	for _, svc := range o.services {
 		if svc == "gateway" {
-			makeTargets.WriteString(fmt.Sprintf("\tcd services/%s && go build -o ../../bin/%s ./cmd/server\n", svc, svc))
+			makeTargets.WriteString(fmt.Sprintf("\tcd services/%s && go build -trimpath -ldflags=\"-s -w\" -o ../../bin/%s ./cmd/server\n", svc, svc))
 		} else {
-			makeTargets.WriteString(fmt.Sprintf("\tcd services/%s && go build -o ../../bin/%s-worker ./cmd/worker\n", svc, svc))
+			makeTargets.WriteString(fmt.Sprintf("\tcd services/%s && go build -trimpath -ldflags=\"-s -w\" -o ../../bin/%s-worker ./cmd/worker\n", svc, svc))
 		}
 	}
 	_ = os.MkdirAll(filepath.Join(root, "bin"), 0755)

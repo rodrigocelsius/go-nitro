@@ -507,18 +507,29 @@ func (q Query) aggregate(ctx context.Context, p provider.Provider, agg expr.Aggr
 // PaginateCollect runs the page + total (if WithCount / Paginate).
 func PaginateCollect[T any](ctx context.Context, q Query, p provider.Provider, opts ...provider.Option) (PageResult[T], error) {
 	ast := q.AST()
-	var total int64
-	if q.withCount {
-		n, err := q.WithoutCount().Count(ctx, p)
-		if err != nil {
-			return PageResult[T]{}, err
-		}
-		total = n
-	}
-
 	var items []T
 	if err := q.Collect(ctx, p, &items, opts...); err != nil {
 		return PageResult[T]{}, err
+	}
+
+	var total int64
+	if q.withCount {
+		offset := 0
+		if ast.Offset != nil {
+			offset = int(*ast.Offset)
+		}
+		partial := ast.Limit == nil || len(items) < int(*ast.Limit)
+		if partial && (len(items) > 0 || offset == 0) {
+			// A short page is the last one: the total is exact without a
+			// second round-trip (most small/filtered lists skip COUNT).
+			total = int64(offset + len(items))
+		} else {
+			n, err := q.WithoutCount().Count(ctx, p)
+			if err != nil {
+				return PageResult[T]{}, err
+			}
+			total = n
+		}
 	}
 
 	page := 1

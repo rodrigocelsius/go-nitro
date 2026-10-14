@@ -6,6 +6,7 @@ import (
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 	"github.com/rodrigocelsius/go-nitro/ports/v2"
+	"github.com/rodrigocelsius/go-nitro/usecases/v2/transform"
 )
 
 // AuthDeps contains dependencies for auth use cases.
@@ -38,6 +39,7 @@ const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZd
 
 // Login authenticates a user and returns tokens.
 func (a *AuthUseCase) Login(ctx context.Context, email, password string) (*domain.TokenPair, error) {
+	email = transform.NormalizeEmail(email)
 	// 1. Find user
 	user, err := a.deps.UserLookup.FindByEmail(ctx, email)
 	if err != nil || user == nil {
@@ -69,6 +71,9 @@ func (a *AuthUseCase) Login(ctx context.Context, email, password string) (*domai
 
 // Register creates a new user and returns tokens.
 func (a *AuthUseCase) Register(ctx context.Context, email, password, name string) (*domain.TokenPair, error) {
+	// E-mails are case-insensitive identities: "Ana@x.com" and "ana@x.com"
+	// must never become two accounts.
+	email = transform.NormalizeEmail(email)
 	// 1. Check if email already exists
 	existing, _ := a.deps.UserLookup.FindByEmail(ctx, email)
 	if existing != nil {
@@ -107,6 +112,7 @@ func (a *AuthUseCase) Register(ctx context.Context, email, password, name string
 // If the user doesn't exist, it is created automatically (first-login registration).
 // The user parameter comes from the OAuth2 provider's userinfo endpoint.
 func (a *AuthUseCase) LoginOAuth(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
+	user.Email = transform.NormalizeEmail(user.Email)
 	// 1. Try to find existing user by email
 	existing, _ := a.deps.UserLookup.FindByEmail(ctx, user.Email)
 
@@ -190,6 +196,19 @@ func (a *AuthUseCase) revokePair(ctx context.Context, pair *domain.TokenPair) {
 	_ = a.deps.TokenProvider.RevokeToken(ctx, pair.AccessToken)
 }
 
+// RevokeTokens invalidates the given access/refresh tokens (logout for
+// token-based clients). Invalid or empty tokens are ignored.
+func (a *AuthUseCase) RevokeTokens(ctx context.Context, tokens ...string) {
+	if a.deps.TokenProvider == nil {
+		return
+	}
+	for _, t := range tokens {
+		if t != "" {
+			_ = a.deps.TokenProvider.RevokeToken(ctx, t)
+		}
+	}
+}
+
 // Logout deletes a session.
 func (a *AuthUseCase) Logout(ctx context.Context, sessionID string) error {
 	return a.deps.SessionStore.Delete(ctx, sessionID)
@@ -207,10 +226,14 @@ func (a *AuthUseCase) generateTokenPair(ctx context.Context, user *domain.User) 
 		return nil, err
 	}
 
+	expiresIn := 900 // 15 min, the documented default
+	if p, ok := a.deps.TokenProvider.(interface{ AccessTokenTTL() time.Duration }); ok && p.AccessTokenTTL() > 0 {
+		expiresIn = int(p.AccessTokenTTL().Seconds())
+	}
 	return &domain.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
-		ExpiresIn:    900, // 15min default
+		ExpiresIn:    expiresIn,
 	}, nil
 }

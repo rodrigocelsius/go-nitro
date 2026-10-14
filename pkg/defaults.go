@@ -64,6 +64,10 @@ func (a *App) applyDefaults() *App {
 
 	if !a.cfg.DisableTelemetry && !oteladapter.Disabled() {
 		_ = oteladapter.Ensure(a.cfg.ServiceName)
+	}
+	// Only when something exports (OTLP endpoint / NITRO_OTEL_STDOUT): a
+	// span nobody receives is pure per-request overhead.
+	if !a.cfg.DisableTelemetry && oteladapter.Active() {
 		tPre, tPost := oteladapter.TracingPair(domain.DefaultTracer())
 		mPre, mPost := oteladapter.MetricsPair(domain.DefaultMeter())
 		a.inner.Use(tPre)

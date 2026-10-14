@@ -37,15 +37,33 @@ func New(cfg domain.AuthConfig) (*Provider, error) {
 	if len(cfg.JWTSecret) < MinSecretLen {
 		return nil, fmt.Errorf("jwt: JWTSecret must be at least %d characters", MinSecretLen)
 	}
+	// Documented defaults (domain.AuthConfig): a zero TTL used to mint
+	// tokens that expired at issuance.
+	access, refresh := cfg.AccessTokenTTL, cfg.RefreshTokenTTL
+	if access <= 0 {
+		access = DefaultAccessTokenTTL
+	}
+	if refresh <= 0 {
+		refresh = DefaultRefreshTokenTTL
+	}
 	return &Provider{
 		secret:          []byte(cfg.JWTSecret),
 		issuer:          cfg.Issuer,
 		audience:        cfg.Audience,
-		accessTokenTTL:  cfg.AccessTokenTTL,
-		refreshTokenTTL: cfg.RefreshTokenTTL,
+		accessTokenTTL:  access,
+		refreshTokenTTL: refresh,
 		store:           newMemoryStore(),
 	}, nil
 }
+
+// Default token lifetimes when AuthConfig leaves them zero.
+const (
+	DefaultAccessTokenTTL  = 15 * time.Minute
+	DefaultRefreshTokenTTL = 7 * 24 * time.Hour
+)
+
+// AccessTokenTTL reports the access-token lifetime (expires_in).
+func (p *Provider) AccessTokenTTL() time.Duration { return p.accessTokenTTL }
 
 // MustNew is like New but panics on invalid config.
 func MustNew(cfg domain.AuthConfig) *Provider {
