@@ -1,0 +1,16 @@
+github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.2 h1:7ESYL0w+x5aqZ11Pwjhqfxi+OaLdiJ5NcuYRL7uA/A0=
+github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.2/go.mod h1:tu95B1qb4zPagz4T5wSz5is776aAk2a19m7m3BOUhEA=
+github.com/rodrigocelsius/go-nitro/codegen/blinq/v2 v2.0.2 h1:cfAaSk33/Ira1S9sfG/DHcRLZNU4+TAf4vAP9epNils=
+github.com/rodrigocelsius/go-nitro/codegen/blinq/v2 v2.0.2/go.mod h1:m1hRjwtn2eNOeOdUVv4xQcmD/120reiPG4ZE9TvJRtk=
+github.com/rodrigocelsius/go-nitro/codegen/controller/v2 v2.0.2 h1:deK8v4JyEgF/dFX21IOF4OLhaS+g+Dscw8A+JSDiU6c=
+github.com/rodrigocelsius/go-nitro/codegen/controller/v2 v2.0.2/go.mod h1:bYriD5C/9ba58AjcDh7yeYcNck0kVuPkJYXdsvklyVE=
+github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.2 h1:c+tCq8AO5UiJJuuB+pVcAewZmsq5Nrobgs/KGwcSGj8=
+github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.2/go.mod h1:JtE0ZbWyacUa8PdWkfmpG6Pdn1kQijrYqsbRsO7+1DE=
+github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.2 h1:ZJDLZIHQppfyl0VpszHGBTZT+fAldMiJnIu1veIR2cY=
+github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.2/go.mod h1:8mtEY13CV5L1eK9TqA1625sQ86CbYgZ9wAd25K0r438=
+github.com/rodrigocelsius/go-nitro/codegen/json/v2 v2.0.2 h1:v+YA+EWAXCq9J4iU3PcHF2Kv92nV4FGC/Fo/07ItiKY=
+github.com/rodrigocelsius/go-nitro/codegen/json/v2 v2.0.2/go.mod h1:rdhFHelzcW8xvdiCLCklcSB+HG2gGIFgF5yWlIrRkYA=
+github.com/rodrigocelsius/go-nitro/codegen/migration/v2 v2.0.2 h1:I+47MAjMh+Q/mHvstN3TnjNnqEV4sjYWP3UFWLYeYgU=
+github.com/rodrigocelsius/go-nitro/codegen/migration/v2 v2.0.2/go.mod h1:MhVZljFtBT0KJ2fAexq9Ekx064+bAhZbQ/SXIUmpCVM=
+github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.2 h1:nNH0JiccaZab0smNiaeLD4Y1Q1z2Y7nTODI4UZsJGoo=
+github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.2/go.mod h1:sQFgQyVEAhCLtz8vwl8acK2cV8oSP7vL3M5nINfeJhw=
