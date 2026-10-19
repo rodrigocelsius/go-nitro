@@ -121,6 +121,9 @@ func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.
 			add(field, v, rule.Op)
 		}
 	}
+	if def := opts.DefaultSort; queryParam(c, "sort", false) == "" && def != "" {
+		lq.Sort = append(lq.Sort, domain.ListSort{Field: strings.TrimPrefix(def, "-"), Desc: strings.HasPrefix(def, "-")})
+	}
 	if sortKey := queryParam(c, "sort", false); sortKey != "" {
 		desc := false
 		if strings.HasPrefix(sortKey, "-") {
@@ -295,13 +298,17 @@ func compareValues(a, b string) int {
 	return strings.Compare(a, b)
 }
 
-func sortItems(c *domain.Ctx, items []any, allow []string) []any {
+func sortItems(c *domain.Ctx, items []any, allow []string, defaultSort string) []any {
 	if len(items) == 0 {
 		return items
 	}
 	sortKey := c.QueryParam("sort")
 	if sortKey == "" {
-		return items
+		if defaultSort == "" {
+			return items
+		}
+		sortKey = defaultSort
+		allow = nil // server-defined
 	}
 	desc := false
 	if strings.HasPrefix(sortKey, "-") {

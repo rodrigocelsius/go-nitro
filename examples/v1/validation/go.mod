@@ -3,8 +3,8 @@ module github.com/rodrigocelsius/go-nitro/examples/v1/validation/v2
 go 1.26.0
 
 require (
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.6
-	github.com/rodrigocelsius/go-nitro/pkg/v2 v2.0.6
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.7
+	github.com/rodrigocelsius/go-nitro/pkg/v2 v2.0.7
 )
 
 require (
@@ -17,23 +17,23 @@ require (
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/rabbitmq/amqp091-go v1.10.0 // indirect
 	github.com/redis/go-redis/v9 v9.22.0 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/amqp/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/bcrypt/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/jwt/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/keycloak/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/oauth2/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/oidc/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/auth/session/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/cache/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/adapters/otel/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/queue/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/resilience/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/scheduler/v2 v2.0.6 // indirect
-	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.6 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/amqp/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/bcrypt/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/jwt/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/keycloak/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/oauth2/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/oidc/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/auth/session/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/cache/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/adapters/otel/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/queue/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/resilience/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/scheduler/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.7 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.73.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

@@ -4,6 +4,11 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.7] - 2026-10-19
+
+### Added
+- `ResourceConfig.DefaultSort` (e.g. `"-created_at"`): ordering applied when the request has no `?sort`, so audit logs and feeds are newest-first without every client remembering it. An explicit `?sort` still wins.
+
 ## [2.0.6] - 2026-10-19
 
 ### Added

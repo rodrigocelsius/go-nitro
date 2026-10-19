@@ -27,6 +27,8 @@ type ResourceConfig struct {
 	Filterable     []string
 	FilterRules    []FilterRule
 	Sortable       []string
+	// DefaultSort is used when the request has no ?sort, e.g. "-created_at".
+	DefaultSort string
 
 	// DefaultPerPage when ?per_page is omitted (0 → 20).
 	DefaultPerPage int
@@ -161,6 +163,7 @@ func (c *ResourceConfig) toOpts() resourceOpts {
 	if c.Sortable != nil {
 		o.Sortable = append([]string(nil), c.Sortable...)
 	}
+	o.DefaultSort = c.DefaultSort
 	o.DefaultPerPage = c.DefaultPerPage
 	o.MaxPerPage = c.MaxPerPage
 	o.MaxPage = c.MaxPage

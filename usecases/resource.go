@@ -45,6 +45,11 @@ type ResourceOpts struct {
 	// Sortable lists JSON field names allowed in ?sort=field or ?sort=-field.
 	Sortable []string
 
+	// DefaultSort applies when the request has no ?sort (e.g. "-created_at"
+	// for newest-first audit logs). Server-defined, so it is not checked
+	// against Sortable.
+	DefaultSort string
+
 	// DefaultPerPage is used when ?per_page is omitted (0 → 20).
 	DefaultPerPage int
 	// MaxPerPage clamps ?per_page (0 → 100). Prevents huge result sets.
@@ -344,7 +349,7 @@ func makeListHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts
 				items = filterItemsByTenant(items, tenantCol, tenantID)
 			}
 			items = filterItemsOpts(c, items, opts)
-			items = sortItems(c, items, opts.Sortable)
+			items = sortItems(c, items, opts.Sortable, opts.DefaultSort)
 			result = paginateAnyItems(items, page, perPage)
 		}
 

@@ -29,7 +29,7 @@ func TestFilterAndSortItems(t *testing.T) {
 	}
 
 	c2 := &domain.Ctx{AdapterData: queryMap{"sort": "-title"}}
-	sorted := sortItems(c2, items, []string{"title"})
+	sorted := sortItems(c2, items, []string{"title"}, "")
 	if jsonFieldString(sorted[0], "title") != "c" {
 		t.Fatalf("first = %v", sorted[0])
 	}
