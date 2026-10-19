@@ -19,7 +19,7 @@ import (
 
 // devVersion is reported by local builds (go build / go run), which carry no
 // module version.
-const devVersion = "2.0.10-dev"
+const devVersion = "2.0.11-dev"
 
 // nitrogenVersion is the module version stamped by `go install …@vX.Y.Z`.
 var nitrogenVersion = moduleVersion(debug.ReadBuildInfo)

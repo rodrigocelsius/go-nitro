@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/go-sql-driver/mysql"
 )
+
+// mysqlRetryable is set by driver_mysql.go (absent with -tags nitro_nomysql).
+var mysqlRetryable = func(error) bool { return false }
 
 // IsRetryable reports whether err is a transient serialization failure or
 // deadlock that a transaction retry can resolve:
 //   - SQLSTATE 40001 (serialization_failure) / 40P01 (deadlock_detected) — PostgreSQL
 //   - MySQL/MariaDB error 1213 (deadlock) / 1205 (lock wait timeout)
 func IsRetryable(err error) bool {
-	var mysqlErr *mysql.MySQLError
-	if errors.As(err, &mysqlErr) {
-		return mysqlErr.Number == 1213 || mysqlErr.Number == 1205
+	if mysqlRetryable(err) {
+		return true
 	}
 	var state sqlstate
 	if errors.As(err, &state) {

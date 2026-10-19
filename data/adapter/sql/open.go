@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
-
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/microsoft/go-mssqldb"
-	_ "modernc.org/sqlite"
 
 	oteladapter "github.com/rodrigocelsius/go-nitro/adapters/otel/v2"
 	"github.com/rodrigocelsius/go-nitro/blinq/v2/provider/sql/dialect"
@@ -81,6 +78,9 @@ func Open(ctx context.Context, driver, dsn string, opts ...gateway.Option) (*DB,
 		if err := ensureSQLiteDir(dsn); err != nil {
 			return nil, err
 		}
+	}
+	if !slices.Contains(sql.Drivers(), name) {
+		return nil, fmt.Errorf("sqladapter: driver %q is not compiled in (built with -tags nitro_no%s?)", name, map[string]string{"sqlite": "sqlite", "mysql": "mysql", "sqlserver": "mssql"}[name])
 	}
 	std, err := sql.Open(name, dsn)
 	if err != nil {

@@ -3,8 +3,8 @@ module github.com/rodrigocelsius/go-nitro/codegen/controller/v2
 go 1.22.2
 
 require (
-	github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.9
-	github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.9
+	github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.10
+	github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.10
 )
 
 replace (

@@ -55,7 +55,7 @@ func TestCountBucketsWhere_SingleQueryScoped(t *testing.T) {
 	add("a", now.AddDate(0, 0, -2))
 	add("a", now)
 	add("a", now.Add(-time.Hour))
-	add("b", now) // other tenant: must not count
+	add("b", now)                    // other tenant: must not count
 	add("a", now.AddDate(0, 0, -10)) // outside the window
 
 	got, err := store.CountBucketsWhere(ctx, blinqfield.Col[time.Time]("bk_events", "created_at").Ref(),

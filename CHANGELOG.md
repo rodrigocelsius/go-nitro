@@ -4,6 +4,11 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.10] - 2026-10-19
+
+### Changed
+- **SQL drivers are opt-out via build tags:** `data/adapter/sql` used to link MySQL, SQL Server and SQLite (pure-Go modernc) into every binary, Postgres-only apps included. Default builds are unchanged; build with `-tags nitro_nosqlite,nitro_nomysql,nitro_nomssql` to drop the unused ones (several MB per binary). Opening an excluded driver fails with an explicit hint instead of `sql: unknown driver`. The MySQL deadlock detector used by `IsRetryable` is registered by the MySQL driver file.
+
 ## [2.0.9] - 2026-10-19
 
 ### Added
