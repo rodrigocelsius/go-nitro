@@ -4,6 +4,12 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.3] - 2026-10-19
+
+### Fixed
+- **BLinq/data codegen ignored `func (T) TableName() string`** and emitted the conventional table (e.g. `organizations` for a model whose runtime table is `app_organizations`), so typed queries hit the wrong table. A literal `TableName()` is now honored; `//nitro:table=` still wins.
+- **`nitrogen version` always printed 2.0.0**: it now reports the module version stamped by `go install …@vX.Y.Z` (local builds report `-dev`).
+
 ## [2.0.2] - 2026-10-19
 
 ### Fixed

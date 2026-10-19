@@ -75,3 +75,16 @@ func TestParseModels_SkipsAbstractBase(t *testing.T) {
 		}
 	}
 }
+
+func TestParseModels_HonorsTableNameMethod(t *testing.T) {
+	models, err := ParseModels("testdata/embeds/user.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findModel(t, models, "Ledger").TableName; got != "finance_ledger" {
+		t.Fatalf("Ledger table = %q, want finance_ledger", got)
+	}
+	if got := findModel(t, models, "Audit").TableName; got != "comment_wins" {
+		t.Fatalf("Audit table = %q, want comment_wins (comment override wins)", got)
+	}
+}

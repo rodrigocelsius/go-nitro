@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	controllergen "github.com/rodrigocelsius/go-nitro/codegen/controller/v2"
@@ -16,7 +17,19 @@ import (
 	gen "github.com/rodrigocelsius/go-nitro/codegen/json/v2"
 )
 
-const nitrogenVersion = "2.0.0"
+// devVersion is reported by local builds (go build / go run), which carry no
+// module version.
+const devVersion = "2.0.4-dev"
+
+// nitrogenVersion is the module version stamped by `go install …@vX.Y.Z`.
+var nitrogenVersion = moduleVersion(debug.ReadBuildInfo)
+
+func moduleVersion(read func() (*debug.BuildInfo, bool)) string {
+	if bi, ok := read(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return strings.TrimPrefix(bi.Main.Version, "v")
+	}
+	return devVersion
+}
 
 func main() {
 	if len(os.Args) < 2 {

@@ -4,7 +4,7 @@ go 1.22.2
 
 require (
 	github.com/elastic/go-elasticsearch/v8 v8.17.1
-	github.com/rodrigocelsius/go-nitro/blinq/v2 v2.0.2
+	github.com/rodrigocelsius/go-nitro/blinq/v2 v2.0.3
 )
 
 require (

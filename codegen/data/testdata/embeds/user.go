@@ -13,3 +13,18 @@ type Order struct {
 	nitro.TenantModel
 	Title string `json:"title"`
 }
+
+type Ledger struct {
+	nitro.HardModel
+	Amount int `json:"amount"`
+}
+
+func (Ledger) TableName() string { return "finance_ledger" }
+
+//nitro:table=comment_wins
+type Audit struct {
+	nitro.HardModel
+	Note string `json:"note"`
+}
+
+func (*Audit) TableName() string { return "ignored" }

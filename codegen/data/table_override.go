@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
 	"strings"
 )
 
@@ -50,7 +51,51 @@ func scanTableOverrides(filename string) (map[string]string, error) {
 		return true
 	})
 
+	// `func (T) TableName() string { return "x" }` is what the runtime
+	// (Resource, StoreFor) honors; the metamodel must agree. An explicit
+	// //nitro:table= comment still wins.
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "TableName" || fn.Recv == nil || len(fn.Recv.List) != 1 || fn.Body == nil {
+			continue
+		}
+		recv := fn.Recv.List[0].Type
+		if star, ok := recv.(*ast.StarExpr); ok {
+			recv = star.X
+		}
+		ident, ok := recv.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		if _, exists := overrides[ident.Name]; exists {
+			continue
+		}
+		if name, ok := literalReturn(fn.Body); ok {
+			overrides[ident.Name] = name
+		}
+	}
+
 	return overrides, nil
+}
+
+// literalReturn extracts "x" from a body that is exactly `return "x"`.
+func literalReturn(body *ast.BlockStmt) (string, bool) {
+	if len(body.List) != 1 {
+		return "", false
+	}
+	ret, ok := body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return "", false
+	}
+	lit, ok := ret.Results[0].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	v, err := strconv.Unquote(lit.Value)
+	if err != nil || v == "" {
+		return "", false
+	}
+	return v, true
 }
 
 func extractTableOverride(doc *ast.CommentGroup) (string, bool) {
