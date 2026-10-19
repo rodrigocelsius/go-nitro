@@ -9,6 +9,6 @@ replace (
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.0-00010101000000-000000000000
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.0
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.1
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.1
 )

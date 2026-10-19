@@ -25,6 +25,9 @@ type Model struct {
 	StructName string
 	TableName  string
 	Columns    []Column
+	// Imports maps package identifiers referenced by column types to import
+	// paths (from the model file), so generators can qualify them.
+	Imports map[string]string
 }
 
 // Column represents a field mapped to a column.
@@ -92,17 +95,45 @@ func ParseModels(filename string) ([]Model, error) {
 		return nil, err
 	}
 
+	imports := fileImports(filename)
+	pkgStructs := packageStructs(filename)
+	embedded := embeddedBases(pkgStructs)
+
 	var models []Model
 	for _, def := range structDefs {
+		// Abstract bases (embedded by other structs of the package) are not
+		// tables unless they opt in with //nitro:table=….
+		if embedded[def.Name] && tableOverrides[def.Name] == "" {
+			continue
+		}
 		model := Model{
 			StructName: def.Name,
 			TableName:  resolveTableName(def.Name, tableOverrides[def.Name]),
+			Imports:    imports,
 		}
 
 		annotations := structAnnotations[def.Name]
 
+		fields := def.Fields
+		if len(def.Embeds) > 0 {
+			promoted, flags := resolveEmbeds(def, pkgStructs)
+			// Promoted base fields come first, like nitro.Model's ID.
+			fields = append(promoted, fields...)
+			if flags.hard {
+				annotations.NoSoftDelete = true
+			}
+			if flags.tenant && !hasField(fields, "TenantID") {
+				fields = append(fields, nitroast.Field{
+					GoName:   "TenantID",
+					Kind:     nitroast.KindStruct,
+					TypeName: "UUID",
+					Tags:     map[string]string{"db": "tenant_id", "blinq": "index"},
+				})
+			}
+		}
+
 		existingFields := make(map[string]bool)
-		for _, f := range def.Fields {
+		for _, f := range fields {
 			if !isColumnField(f) {
 				continue
 			}
@@ -127,6 +158,15 @@ func ParseModels(filename string) ([]Model, error) {
 		}
 	}
 	return models, nil
+}
+
+func hasField(fields []nitroast.Field, goName string) bool {
+	for _, f := range fields {
+		if f.GoName == goName {
+			return true
+		}
+	}
+	return false
 }
 
 func isSupportedColumnKind(k nitroast.FieldKind) bool {

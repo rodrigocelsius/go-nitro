@@ -2,6 +2,7 @@ package blinqgen
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	nitroast "github.com/rodrigocelsius/go-nitro/codegen/ast/v2"
@@ -51,11 +52,20 @@ func GenerateWithOptions(packageName, fieldImportPath string, models []datagen.M
 	}
 
 	needTime := false
+	extra := map[string]string{} // package identifier → import path
 	for _, m := range models {
 		for _, c := range m.Columns {
-			if strings.Contains(fieldGoType(c), "time.Time") {
+			goType := fieldGoType(c)
+			if strings.Contains(goType, "time.Time") {
 				needTime = true
-				break
+			}
+			for _, q := range typeQualifiers(goType) {
+				if q == "time" {
+					continue
+				}
+				if path, ok := m.Imports[q]; ok {
+					extra[q] = path
+				}
 			}
 		}
 	}
@@ -66,6 +76,22 @@ func GenerateWithOptions(packageName, fieldImportPath string, models []datagen.M
 	b.WriteString("import (\n")
 	if needTime {
 		b.WriteString("\t\"time\"\n\n")
+	}
+	names := make([]string, 0, len(extra))
+	for q := range extra {
+		names = append(names, q)
+	}
+	sort.Strings(names)
+	for _, q := range names {
+		path := extra[q]
+		if path[strings.LastIndexByte(path, '/')+1:] == q {
+			fmt.Fprintf(&b, "\t%q\n", path)
+		} else {
+			fmt.Fprintf(&b, "\t%s %q\n", q, path)
+		}
+	}
+	if len(names) > 0 {
+		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "\tblinqfield %q\n)\n\n", fieldImportPath)
 
@@ -188,7 +214,13 @@ func hasTagToken(tag, want string) bool {
 func fieldGoType(c datagen.Column) string {
 	tn := strings.TrimSpace(c.TypeName)
 	if tn != "" {
-		return mapPortableType(tn)
+		out := mapPortableType(tn)
+		if hasLocalTypeRef(out) {
+			// The DSL lives in another package (modelgen): unqualified model
+			// types are not visible there, so fall back to any.
+			return "any"
+		}
+		return out
 	}
 	switch c.Kind {
 	case nitroast.KindString:
@@ -206,8 +238,104 @@ func fieldGoType(c datagen.Column) string {
 	}
 }
 
+// typeQualifiers returns the package identifiers referenced by a Go type
+// expression (e.g. "map[string]money.Money" → ["money"]).
+func typeQualifiers(goType string) []string {
+	var out []string
+	start := -1
+	for i := 0; i <= len(goType); i++ {
+		var r byte
+		if i < len(goType) {
+			r = goType[i]
+		}
+		isIdent := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if isIdent {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 && r == '.' {
+			out = append(out, goType[start:i])
+		}
+		start = -1
+	}
+	return out
+}
+
+// hasLocalTypeRef reports whether goType names an unqualified, non-builtin
+// type (declared in the model package), e.g. "map[string]Address".
+func hasLocalTypeRef(goType string) bool {
+	start := -1
+	for i := 0; i <= len(goType); i++ {
+		var r byte
+		if i < len(goType) {
+			r = goType[i]
+		}
+		isIdent := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if isIdent {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 {
+			word := goType[start:i]
+			qualified := start > 0 && goType[start-1] == '.'
+			isPkg := r == '.'
+			if !qualified && !isPkg && !isBuiltinType(word) && word != "map" && word != "error" && word != "interface" && word != "struct" {
+				return true
+			}
+		}
+		start = -1
+	}
+	return false
+}
+
+// jsonColumnType maps Nitro JSONB wrappers to plain Go types for the DSL, so
+// the generated package never needs the model package's own (unqualified)
+// type arguments.
+func jsonColumnType(base string) (string, bool) {
+	name, arg := base, ""
+	if i := strings.IndexByte(base, '['); i >= 0 && strings.HasSuffix(base, "]") {
+		name, arg = base[:i], base[i+1:len(base)-1]
+	}
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
+	switch name {
+	case "Attrs":
+		return "map[string]any", true
+	case "StringSlice":
+		return "[]string", true
+	case "JSONSlice":
+		if isBuiltinType(arg) {
+			return "[]" + arg, true
+		}
+		return "any", true
+	case "JSON":
+		return "any", true
+	}
+	return "", false
+}
+
+func isBuiltinType(t string) bool {
+	switch t {
+	case "string", "bool", "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64", "byte", "rune", "any":
+		return true
+	}
+	return false
+}
+
 func mapPortableType(tn string) string {
 	ptr := strings.HasPrefix(tn, "*")
+	if jt, ok := jsonColumnType(strings.TrimPrefix(tn, "*")); ok {
+		if ptr && !strings.HasPrefix(jt, "[]") && !strings.HasPrefix(jt, "map[") && jt != "any" {
+			return "*" + jt
+		}
+		return jt
+	}
 	base := strings.TrimPrefix(tn, "*")
 	if i := strings.LastIndexByte(base, '.'); i >= 0 {
 		base = base[i+1:]

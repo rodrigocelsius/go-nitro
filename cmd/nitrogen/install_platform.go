@@ -103,6 +103,7 @@ func ensureLocalNitroReplaces(mods ...string) error {
 		return err
 	}
 	src := string(b)
+	root = replaceTarget(".", root)
 	var extra strings.Builder
 	for _, m := range mods {
 		needle := "github.com/rodrigocelsius/go-nitro/" + m + "/v2 =>"

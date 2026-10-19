@@ -78,3 +78,22 @@ func TestGenerateTableNames(t *testing.T) {
 		t.Fatal("tablename file must not include DSL entity")
 	}
 }
+
+func TestGenerate_JSONColumnsUsePlainGoTypes(t *testing.T) {
+	models, err := blinqgen.ParseModels("../data/testdata/embeds/user.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := blinqgen.GenerateDSL("modelgen", "", models)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"blinqfield.Field[map[string]any]", "blinqfield.Field[[]string]", `Column: "scope_id"`} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("generated code missing %q:\n%s", want, code)
+		}
+	}
+	if strings.Contains(code, "nitro.") {
+		t.Fatalf("generated code references nitro without importing it:\n%s", code)
+	}
+}

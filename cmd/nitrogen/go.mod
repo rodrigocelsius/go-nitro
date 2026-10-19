@@ -18,18 +18,18 @@ replace github.com/rodrigocelsius/go-nitro/codegen/dto/v2 => ../../codegen/dto
 
 replace github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 => ../../codegen/openapi
 
-require github.com/rodrigocelsius/go-nitro/codegen/json/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/json/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/blinq/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/blinq/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/migration/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/migration/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/controller/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/controller/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.1
 
-require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.0
+require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.1

@@ -197,6 +197,26 @@ func writeProjectFiles(root string, files map[string]string) error {
 	return nil
 }
 
+// replaceTarget returns the Nitro checkout path relative to the go.mod
+// directory ("../../go-nitro"), so generated projects stay portable across
+// machines, containers and CI. Falls back to the absolute path when no
+// relative form exists (e.g. a different Windows volume).
+func replaceTarget(goModDir, nitroRoot string) string {
+	modDir, err := filepath.Abs(goModDir)
+	if err != nil {
+		return filepath.ToSlash(nitroRoot)
+	}
+	rel, err := filepath.Rel(modDir, nitroRoot)
+	if err != nil {
+		return filepath.ToSlash(nitroRoot)
+	}
+	rel = filepath.ToSlash(rel)
+	if rel != "." && !strings.HasPrefix(rel, "../") && rel != ".." {
+		rel = "./" + rel
+	}
+	return rel
+}
+
 func appendNitroReplace(goModPath, nitroPath string) error {
 	if nitroPath == "" {
 		return nil
@@ -239,10 +259,11 @@ func appendNitroReplace(goModPath, nitroPath string) error {
 		"data/adapter/sql",
 		"blinq",
 	}
+	root := replaceTarget(filepath.Dir(goModPath), abs)
 	var bld strings.Builder
 	bld.WriteString("\n\nreplace (\n")
 	for _, m := range mods {
-		fmt.Fprintf(&bld, "\tgithub.com/rodrigocelsius/go-nitro/%s/v2 => %s/%s\n", m, abs, m)
+		fmt.Fprintf(&bld, "\tgithub.com/rodrigocelsius/go-nitro/%s/v2 => %s/%s\n", m, root, m)
 	}
 	bld.WriteString(")\n")
 	src = strings.TrimSpace(src) + bld.String()

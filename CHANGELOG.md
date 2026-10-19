@@ -4,6 +4,16 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.1] - 2026-10-19
+
+### Fixed
+- **`nitrogen make <model>.go --data` generated code that did not compile** when a column used a Nitro JSONB wrapper (`nitro.Attrs`, `nitro.StringSlice`, `nitro.JSON[T]`): the `nitro` package was referenced without an import. JSONB columns now map to plain Go types in the DSL (`map[string]any`, `[]string`, `any`) and any other qualified column type gets its import emitted.
+- **Columns typed with a model-package type** (e.g. `map[string]Address`) produced undefined identifiers in the `modelgen` package; they now fall back to `Field[any]`.
+- **Embedded base structs declared in a sibling file were ignored** by the BLinq/data codegen: their fields (e.g. a shared `InstanceID`) were missing from the metamodel. Embeds are now resolved across the package, recursively.
+- **`nitro.HardModel` / `nitro.TenantModel` embeds were not recognized** by codegen: a `HardModel` struct got a phantom `deleted_at` soft-delete column, and `TenantModel` did not expose `tenant_id`.
+- **Abstract base structs became tables:** a struct only used as an embedded base (without `//nitro:table=…`) no longer generates a metamodel/table.
+- **`nitrogen new` / `install` wrote absolute `replace` paths** (`=> /home/user/...`) into `go.mod`, breaking Docker builds, CI and other machines. Local Nitro replaces are now relative to the module (`=> ../../go-nitro/pkg`).
+
 ## [Unreleased]
 
 > Versioning was reset: the first published release of this repository is **v2.0.0** (module path `github.com/rodrigocelsius/go-nitro/.../v2`). Entries below the 2.0.0 section describe the code's earlier internal history.
