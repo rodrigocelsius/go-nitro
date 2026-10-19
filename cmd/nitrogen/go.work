@@ -1,0 +1,16 @@
+// Local development only: build the CLI against the codegen modules of this
+// checkout. `go install …/cmd/nitrogen/v2@vX` ignores go.work, which is why the
+// CLI go.mod carries no replace directives (Go rejects them in go install).
+go 1.26.0
+
+use (
+	.
+	../../codegen/ast
+	../../codegen/blinq
+	../../codegen/controller
+	../../codegen/data
+	../../codegen/dto
+	../../codegen/json
+	../../codegen/migration
+	../../codegen/openapi
+)

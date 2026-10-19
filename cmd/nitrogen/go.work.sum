@@ -1,0 +1,6 @@
+github.com/rodrigocelsius/go-nitro/codegen/blinq/v2 v2.0.1/go.mod h1:L/LsKfRPb3B3XsMyOyp0WmLRkyhFRkGn8DQVXeiGtOo=
+github.com/rodrigocelsius/go-nitro/codegen/controller/v2 v2.0.1/go.mod h1:jnYoyZfDIay83i6kOxW4W3Xwug4Ahm+5Q9BoTwhiU1M=
+github.com/rodrigocelsius/go-nitro/codegen/dto/v2 v2.0.1/go.mod h1:8suxbtvJSjvkxSdJi+GmcIrzwB/kLec0ChWgCwNmJ28=
+github.com/rodrigocelsius/go-nitro/codegen/json/v2 v2.0.1/go.mod h1:5nNQx5osXYNg5rSe//BSYCAsUUMJU0Dn+rWXFVpWGlQ=
+github.com/rodrigocelsius/go-nitro/codegen/migration/v2 v2.0.1/go.mod h1:uLi6Z8Cp3lhWugTrpojp+DRMiN7fZqlOFMj6Fi2Orf0=
+github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.1/go.mod h1:sQFgQyVEAhCLtz8vwl8acK2cV8oSP7vL3M5nINfeJhw=

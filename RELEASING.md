@@ -24,3 +24,9 @@ path ends in `/v2` (Go requires the major-version suffix for `v2.x` tags).
 
 `replace` directives in each `go.mod` only serve local development; consumers
 ignore them and resolve everything from tags.
+
+**CLI (`cmd/nitrogen`)** is the exception: `go install …@version` rejects a
+`go.mod` with `replace`, so the CLI uses `cmd/nitrogen/go.work` for local
+development instead. `release.sh` tags libraries first, then runs
+`go mod tidy` for the CLI against the published tags (committing go.sum when it
+changes) and tags `cmd/nitrogen/vX.Y.Z` last.

@@ -4,6 +4,12 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.2] - 2026-10-19
+
+### Fixed
+- **`go install github.com/rodrigocelsius/go-nitro/cmd/nitrogen/v2@…` failed** ("go.mod … must not contain replace directives"): the CLI module now has no `replace`; local development uses `cmd/nitrogen/go.work`.
+- **`scripts/release.sh` rejected every version except v2.0.0**: the internal-require check grepped test fixtures recursively. It now checks each module's own `go.mod` and tags the CLI after the libraries it depends on.
+
 ## [2.0.1] - 2026-10-19
 
 ### Fixed
