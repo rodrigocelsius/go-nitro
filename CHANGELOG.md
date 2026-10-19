@@ -4,6 +4,11 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.9] - 2026-10-19
+
+### Added
+- **Row locking in BLinq:** `query.ForUpdate()`, `ForShare()`, `SkipLocked()`, `NoWait()` — `SELECT … FOR UPDATE SKIP LOCKED` on Postgres/MySQL 8, `WITH (ROWLOCK, UPDLOCK, READPAST)` hints on SQL Server, ignored on SQLite (database-level locking). The building block for multi-consumer job queues, transactional outboxes and reservations without raw SQL. Copy-on-write like the rest of the DSL; rejected with GROUP BY/DISTINCT. Covered by compile tests per dialect and a Postgres integration test with two concurrent consumers.
+
 ## [2.0.8] - 2026-10-19
 
 ### Fixed

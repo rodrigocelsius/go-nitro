@@ -3,8 +3,8 @@ module github.com/rodrigocelsius/go-nitro/codegen/blinq/v2
 go 1.22.2
 
 require (
-	github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.8
-	github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.8
+	github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.9
+	github.com/rodrigocelsius/go-nitro/codegen/data/v2 v2.0.9
 )
 
 replace (

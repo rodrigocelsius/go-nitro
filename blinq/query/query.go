@@ -329,6 +329,52 @@ func (q Query) Limit(n uint64) Query {
 	return q
 }
 
+// ForUpdate locks the selected rows until the transaction ends
+// (SELECT … FOR UPDATE). Use inside a transaction.
+//
+//	jobs, err := store.Find(ctx, store.Query().Where(pending).Limit(100).ForUpdate().SkipLocked())
+func (q Query) ForUpdate() Query {
+	q = q.clone()
+	l := q.lock()
+	l.Share = false
+	return q
+}
+
+// ForShare takes a shared row lock (SELECT … FOR SHARE).
+func (q Query) ForShare() Query {
+	q = q.clone()
+	q.lock().Share = true
+	return q
+}
+
+// SkipLocked skips rows locked by other transactions — the building block of
+// multi-consumer job queues. Implies ForUpdate when no lock mode was set.
+func (q Query) SkipLocked() Query {
+	q = q.clone()
+	l := q.lock()
+	l.SkipLocked, l.NoWait = true, false
+	return q
+}
+
+// NoWait fails immediately instead of waiting for locked rows.
+func (q Query) NoWait() Query {
+	q = q.clone()
+	l := q.lock()
+	l.NoWait, l.SkipLocked = true, false
+	return q
+}
+
+// lock returns the (copied) lock clause, creating FOR UPDATE by default.
+func (q *Query) lock() *expr.LockClause {
+	if q.ast.Lock == nil {
+		q.ast.Lock = &expr.LockClause{}
+	} else {
+		c := *q.ast.Lock
+		q.ast.Lock = &c
+	}
+	return q.ast.Lock
+}
+
 // Offset sets OFFSET.
 func (q Query) Offset(n uint64) Query {
 	q = q.clone()

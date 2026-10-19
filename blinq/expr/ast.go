@@ -263,6 +263,16 @@ type Query struct {
 	Includes []Include
 
 	Aggregate *Aggregate
+
+	// Lock adds row locking to SELECT (queues, outbox, reservations).
+	Lock *LockClause
+}
+
+// LockClause is SELECT … FOR UPDATE / FOR SHARE [SKIP LOCKED | NOWAIT].
+type LockClause struct {
+	Share      bool // FOR SHARE instead of FOR UPDATE
+	SkipLocked bool
+	NoWait     bool
 }
 
 // Assignment is SET col = value (UPDATE) or an INSERT column via Values.

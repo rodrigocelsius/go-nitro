@@ -138,6 +138,9 @@ func compileSelect(q expr.Query, d dialect.Dialect) (Compiled, error) {
 	}
 	sb.WriteString(" FROM ")
 	sb.WriteString(tableName(q.From, d))
+	if q.Lock != nil && d.Name() == "mssql" {
+		sb.WriteString(mssqlLockHint(q.Lock))
+	}
 	writeJoins(&sb, q.Joins, d)
 
 	if q.Where != nil {
@@ -151,6 +154,10 @@ func compileSelect(q expr.Query, d dialect.Dialect) (Compiled, error) {
 			args = append(args, a...)
 			idx = next
 		}
+	}
+
+	if q.Lock != nil && (len(q.GroupBy) > 0 || q.Distinct) {
+		return Compiled{}, fmt.Errorf("blinq/sql: row locks cannot be combined with GROUP BY or DISTINCT")
 	}
 
 	if len(q.GroupBy) > 0 {
@@ -198,8 +205,47 @@ func compileSelect(q expr.Query, d dialect.Dialect) (Compiled, error) {
 	}
 
 	sb.WriteString(lo)
+	if q.Lock != nil {
+		sb.WriteString(lockSuffix(q.Lock, d))
+	}
 	_ = idx
 	return Compiled{SQL: sb.String(), Args: args}, nil
+}
+
+// lockSuffix renders FOR UPDATE / FOR SHARE [SKIP LOCKED | NOWAIT] for
+// Postgres and MySQL 8+. SQLite locks the whole database on write and has no
+// row locks (ignored); SQL Server uses table hints (see mssqlLockHint).
+func lockSuffix(l *expr.LockClause, d dialect.Dialect) string {
+	switch d.Name() {
+	case "postgres", "mysql":
+	default:
+		return ""
+	}
+	out := " FOR UPDATE"
+	if l.Share {
+		out = " FOR SHARE"
+	}
+	if l.SkipLocked {
+		out += " SKIP LOCKED"
+	} else if l.NoWait {
+		out += " NOWAIT"
+	}
+	return out
+}
+
+func mssqlLockHint(l *expr.LockClause) string {
+	hints := []string{"ROWLOCK"}
+	if l.Share {
+		hints = append(hints, "HOLDLOCK")
+	} else {
+		hints = append(hints, "UPDLOCK")
+	}
+	if l.SkipLocked {
+		hints = append(hints, "READPAST")
+	} else if l.NoWait {
+		hints = append(hints, "NOWAIT")
+	}
+	return " WITH (" + strings.Join(hints, ", ") + ")"
 }
 
 func writeSelectList(sb *strings.Builder, selects []expr.SelectItem, qualify bool, d dialect.Dialect) error {
