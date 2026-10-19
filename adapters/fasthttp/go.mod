@@ -3,12 +3,12 @@ module github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2
 go 1.26.0
 
 require (
-	github.com/rodrigocelsius/go-nitro/adapters/ratelimit/v2 v2.0.4
-	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.4
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.4
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.4
-	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.4
-	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.4
+	github.com/rodrigocelsius/go-nitro/adapters/ratelimit/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.5
 	github.com/valyala/fasthttp v1.73.0
 	golang.org/x/crypto v0.57.0
 )

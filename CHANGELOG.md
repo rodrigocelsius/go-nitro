@@ -4,6 +4,12 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.5] - 2026-10-19
+
+### Added
+- **`Store.CountBucketsWhere(ctx, col, buckets, preds...)`**: time-series counts in a **single query** (`COUNT(CASE WHEN …)` per bucket, scanning only the overall window), scoped by any predicates — tenant, status, soft delete. `CountBuckets` ran one query per bucket and could not be filtered, so it was unusable for multi-tenant dashboards. Works with numbered (`$n`) and positional (`?`) placeholders; covered by Postgres (integration) and SQLite tests.
+- `query.DayBuckets(n, now)` and `query.HourBuckets(n, now)` next to `MonthBuckets`.
+
 ## [2.0.4] - 2026-10-19
 
 ### Fixed

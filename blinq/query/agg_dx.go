@@ -23,6 +23,36 @@ type TimeBucket struct {
 	Label string
 }
 
+// DayBuckets returns n calendar-day buckets ending today (inclusive), oldest
+// first, in now's location. Labels are YYYY-MM-DD.
+func DayBuckets(n int, now time.Time) []TimeBucket {
+	if n < 1 {
+		n = 1
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	out := make([]TimeBucket, 0, n)
+	for i := n - 1; i >= 0; i-- {
+		d := today.AddDate(0, 0, -i)
+		out = append(out, TimeBucket{Start: d, End: d.AddDate(0, 0, 1), Label: d.Format("2006-01-02")})
+	}
+	return out
+}
+
+// HourBuckets returns n one-hour buckets ending at now's hour (inclusive),
+// oldest first. Labels are RFC 3339 hour starts.
+func HourBuckets(n int, now time.Time) []TimeBucket {
+	if n < 1 {
+		n = 1
+	}
+	h := now.Truncate(time.Hour)
+	out := make([]TimeBucket, 0, n)
+	for i := n - 1; i >= 0; i-- {
+		d := h.Add(-time.Duration(i) * time.Hour)
+		out = append(out, TimeBucket{Start: d, End: d.Add(time.Hour), Label: d.Format(time.RFC3339)})
+	}
+	return out
+}
+
 // MonthBuckets returns n calendar-month buckets ending at now's month (inclusive), oldest first.
 func MonthBuckets(n int, now time.Time) []TimeBucket {
 	if n < 1 {
