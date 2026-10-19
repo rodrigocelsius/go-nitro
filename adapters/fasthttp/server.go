@@ -466,20 +466,23 @@ func (a *App) serverConfig() *fasthttp.Server {
 		maxBody = DefaultMaxRequestBodySize
 	}
 	return &fasthttp.Server{
-		Handler:                       a.Handler(),
-		ReadBufferSize:                4096,
-		WriteBufferSize:               4096,
-		ReadTimeout:                   30 * time.Second,
-		WriteTimeout:                  30 * time.Second,
-		IdleTimeout:                   120 * time.Second,
-		MaxConnsPerIP:                 0,
-		MaxRequestsPerConn:            0,
-		MaxRequestBodySize:            maxBody,
-		DisableHeaderNamesNormalizing: true,
-		NoDefaultServerHeader:         true,
-		NoDefaultDate:                 true,
-		NoDefaultContentType:          true,
-		Concurrency:                   DefaultConcurrency,
+		Handler:            a.Handler(),
+		ReadBufferSize:     4096,
+		WriteBufferSize:    4096,
+		ReadTimeout:        30 * time.Second,
+		WriteTimeout:       30 * time.Second,
+		IdleTimeout:        120 * time.Second,
+		MaxConnsPerIP:      0,
+		MaxRequestsPerConn: 0,
+		MaxRequestBodySize: maxBody,
+		// Header names stay normalized: HTTP field names are case-insensitive
+		// (RFC 9110 §5.1) and HTTP/2 proxies, Node fetch and browsers send
+		// them lowercase. With normalization disabled, Peek("Authorization")
+		// missed "authorization" and every JWT request from a BFF was 401.
+		NoDefaultServerHeader: true,
+		NoDefaultDate:         true,
+		NoDefaultContentType:  true,
+		Concurrency:           DefaultConcurrency,
 	}
 }
 

@@ -4,6 +4,11 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.8] - 2026-10-19
+
+### Fixed
+- **Lowercase request headers were invisible** (`c.Header("Authorization")` returned "" for `authorization: Bearer …`): the server disabled header-name normalization, so lookups became case-sensitive. HTTP field names are case-insensitive (RFC 9110 §5.1) and Node `fetch`, browsers over HTTP/2 and most proxies send lowercase names — every JWT request coming through a BFF/proxy was rejected with 401. Normalization is back on; regression test runs a real server with raw lowercase/uppercase headers.
+
 ## [2.0.7] - 2026-10-19
 
 ### Added

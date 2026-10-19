@@ -7,6 +7,6 @@ replace (
 	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 => ../../pkg/uuid
 )
 
-require github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.7
+require github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.8
 
-require github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.7 // indirect
+require github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.8 // indirect

@@ -7,8 +7,8 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/gofiber/fiber/v3 v3.5.0
 	github.com/labstack/echo/v5 v5.4.0
-	github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2 v2.0.7
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.7
+	github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2 v2.0.8
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.8
 	github.com/valyala/fasthttp v1.73.0
 )
 
@@ -40,10 +40,10 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.7 // indirect
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.7 // indirect
-	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.7 // indirect
-	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.7 // indirect
+	github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 v2.0.8 // indirect
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.8 // indirect
+	github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.8 // indirect
+	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.8 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect

@@ -7,4 +7,4 @@ replace (
 	github.com/rodrigocelsius/go-nitro/json/runtime/v2 => ./runtime
 )
 
-require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.7
+require github.com/rodrigocelsius/go-nitro/codegen/ast/v2 v2.0.8
