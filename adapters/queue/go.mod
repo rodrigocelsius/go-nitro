@@ -3,12 +3,12 @@ module github.com/rodrigocelsius/go-nitro/adapters/queue/v2
 go 1.22.2
 
 require (
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.5
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.5
-	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.5
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.6
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.6
+	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.0.6
 )
 
-require github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.5 // indirect
+require github.com/rodrigocelsius/go-nitro/ports/v2 v2.0.6 // indirect
 
 replace (
 	github.com/rodrigocelsius/go-nitro/domain/v2 => ../../domain

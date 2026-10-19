@@ -280,11 +280,20 @@ func GenerateResourceRoutes(prefix string, modelType reflect.Type, repo domain.R
 	}
 
 	return []ResourceRoute{
-		{Method: "GET", Path: prefix, Handler: makeListHandler(meta, repo, o)},
-		{Method: "GET", Path: prefix + "/:id", Handler: makeGetHandler(meta, repo, o)},
-		{Method: "POST", Path: prefix, Handler: makeCreateHandler(meta, repo, o)},
-		{Method: "PATCH", Path: prefix + "/:id", Handler: makeUpdateHandler(meta, repo, o)},
-		{Method: "DELETE", Path: prefix + "/:id", Handler: makeDeleteHandler(meta, repo, o)},
+		{Method: "GET", Path: prefix, Handler: withRequestContext(makeListHandler(meta, repo, o))},
+		{Method: "GET", Path: prefix + "/:id", Handler: withRequestContext(makeGetHandler(meta, repo, o))},
+		{Method: "POST", Path: prefix, Handler: withRequestContext(makeCreateHandler(meta, repo, o))},
+		{Method: "PATCH", Path: prefix + "/:id", Handler: withRequestContext(makeUpdateHandler(meta, repo, o))},
+		{Method: "DELETE", Path: prefix + "/:id", Handler: withRequestContext(makeDeleteHandler(meta, repo, o))},
+	}
+}
+
+// withRequestContext attaches the request to c.Context() so hooks and
+// repositories can reach it via domain.RequestFrom / nitro.RequestFrom.
+func withRequestContext(h domain.Handler) domain.Handler {
+	return func(c *domain.Ctx) error {
+		c.SetContext(domain.WithRequest(c.Context(), c))
+		return h(c)
 	}
 }
 

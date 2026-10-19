@@ -4,6 +4,11 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.6] - 2026-10-19
+
+### Added
+- **Resource hooks can reach the request:** `BeforeWrite`/`BeforeCreate`/`BeforeUpdate`/`AfterCreate`/`AfterUpdate`/`AfterDelete`/`OnMutate` only received a bare `context.Context`, so they could not read the tenant, the authenticated user, the IP or headers (needed for audit trails, per-tenant side effects, outbox events). Resource handlers now attach the request; read it with `nitro.RequestFrom(ctx)` (or `domain.RequestFrom`).
+
 ## [2.0.5] - 2026-10-19
 
 ### Added
