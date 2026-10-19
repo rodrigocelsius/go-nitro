@@ -24,7 +24,8 @@ mapfile -t DIRS < <(find . -name go.mod \
   -printf '%h\n' | sed 's|^\./||' | sort)
 
 # Every internal require must already be at $VERSION.
-bad=$(grep -rhE 'go-nitro/.*/v2 v[0-9]' --include=go.mod "${DIRS[@]/#/./}" 2>/dev/null | grep -v " $VERSION" || true)
+# Only each module's own go.mod (not recursive: test fixtures pin placeholders).
+bad=$(for d in "${DIRS[@]}"; do grep -hE 'go-nitro/.*v2 v[0-9]' "$d/go.mod"; done 2>/dev/null | grep -vE " $VERSION( |$)" || true)
 [[ -z "$bad" ]] || { echo "internal requires not at $VERSION:"; echo "$bad"; exit 1; }
 
 for d in "${DIRS[@]}"; do
