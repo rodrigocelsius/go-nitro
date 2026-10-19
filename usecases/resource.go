@@ -489,7 +489,7 @@ func makeUpdateHandler(meta ResourceMetadata, repo domain.ResourceRepository, op
 			}
 		}
 
-		if err := repo.Update(c.Context(), entity); err != nil {
+		if err := persistUpdate(c.Context(), repo, existing, entity, merge); err != nil {
 			return mapRepoError(err, meta.TableName+": not found")
 		}
 

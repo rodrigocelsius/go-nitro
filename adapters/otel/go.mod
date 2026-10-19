@@ -3,7 +3,7 @@ module github.com/rodrigocelsius/go-nitro/adapters/otel/v2
 go 1.26.0
 
 require (
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.3
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.4
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
@@ -22,7 +22,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
-	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.3 // indirect
+	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect

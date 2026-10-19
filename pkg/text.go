@@ -8,10 +8,16 @@ import (
 // Digits, CamelCase, PascalCase, SnakeCase, KebabCase, SqueezeSpace — public helpers.
 func Digits(s string) string { return transform.Digits(s) }
 
-func CamelCase(s string) string    { return transform.CamelCase(s) }
-func PascalCase(s string) string   { return transform.PascalCase(s) }
-func SnakeCase(s string) string    { return transform.SnakeCase(s) }
-func KebabCase(s string) string    { return transform.KebabCase(s) }
+func CamelCase(s string) string  { return transform.CamelCase(s) }
+func PascalCase(s string) string { return transform.PascalCase(s) }
+func SnakeCase(s string) string  { return transform.SnakeCase(s) }
+func KebabCase(s string) string  { return transform.KebabCase(s) }
+
+// Slugify returns a URL-safe slug, folding accents: "São Paulo" → "sao-paulo".
+func Slugify(s string) string { return transform.Slugify(s) }
+
+// FoldAccents replaces accented Latin letters with ASCII ("Ação" → "Acao").
+func FoldAccents(s string) string  { return transform.FoldAccents(s) }
 func SqueezeSpace(s string) string { return transform.SqueezeSpace(s) }
 
 // IsDigits reports whether s is non-empty and only ASCII 0-9.

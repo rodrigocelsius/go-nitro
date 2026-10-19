@@ -204,6 +204,27 @@ func (r *reflectRepo) Create(ctx context.Context, entity any) error {
 	return nil
 }
 
+// UpdateFields persists only the named Go fields (+ UpdatedAt).
+func (r *reflectRepo) UpdateFields(ctx context.Context, entity any, fields []string) error {
+	if err := r.ensureType(entity); err != nil {
+		return err
+	}
+	domain.ApplyEntityDefaults(entity, domain.EntityDefaults{AutoTimestamps: true}, false)
+	id, sets := structIDAndSetsOnly(entity, r.table, r.idCol, fieldSet(fields))
+	if id == nil {
+		return fmt.Errorf("pgx: UpdateFields: missing id")
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	updated, err := r.update(ctx, id, sets...)
+	if err != nil {
+		return err
+	}
+	reflect.ValueOf(entity).Elem().Set(reflect.ValueOf(updated).Elem())
+	return nil
+}
+
 func (r *reflectRepo) Update(ctx context.Context, entity any) error {
 	if err := r.ensureType(entity); err != nil {
 		return err

@@ -21,6 +21,15 @@ type ResourceRepository interface {
 	Delete(ctx context.Context, id any) error
 }
 
+// ResourcePartialUpdater is optionally implemented by repositories that can
+// persist a subset of fields. Resource PATCH uses it to write only the fields
+// the request changed (plus UpdatedAt), so columns written concurrently by
+// other code paths or services are not overwritten with stale values
+// (lost update). fields are Go struct field names, promoted fields included.
+type ResourcePartialUpdater interface {
+	UpdateFields(ctx context.Context, entity any, fields []string) error
+}
+
 // ResourceListResult is the paginated result returned by List.
 type ResourceListResult struct {
 	Items      []any `json:"items"`

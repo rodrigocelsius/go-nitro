@@ -139,10 +139,12 @@ func cmdMakeMiddleware(args []string) {
 
 import nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 
-// %s is HTTP middleware. Register with app.Use(%s).
+// %s is HTTP middleware. Register with app.Use(%s) or per route.
+// Return nil to continue the chain; return an error (nitro.Unauthorized(…),
+// nitro.Forbidden(…)) to stop it with that response.
 // For JWT, prefer nitro.JWTMiddleware / nitro.RequireRoles instead of a custom parser.
 func %s(c *nitro.Ctx) error {
-	return c.Next()
+	return nil
 }
 `, name, name, name)
 	if err := writeFile(path, body); err != nil {

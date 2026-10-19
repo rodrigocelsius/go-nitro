@@ -4,6 +4,15 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.4] - 2026-10-19
+
+### Fixed
+- **Resource PATCH lost updates:** the merge path wrote every column back, so a value changed concurrently (another request, a worker, another service sharing the table) between the read and the write was silently reverted — including `readonly` columns. PATCH now writes only the fields the request changed (+ `updated_at`), and nothing when nothing changed. New optional `domain.ResourcePartialUpdater`, implemented by the pgx/sql stores and forwarded by the Resource cache. PUT/replace mode is unchanged. Covered by a Postgres integration test (`-tags integration`, `NITRO_PG_DSN`).
+- **`nitrogen make:middleware` generated code that did not compile** (`return c.Next()` — `nitro.Ctx` has no `Next`). The template now returns `nil` and documents the chain contract.
+
+### Added
+- `nitro.Slugify` ("Café & Cia. São Paulo" → `cafe-cia-sao-paulo`) and `nitro.FoldAccents`, plus `transform:"slug"` / `transform:"unaccent"`.
+
 ## [2.0.3] - 2026-10-19
 
 ### Fixed

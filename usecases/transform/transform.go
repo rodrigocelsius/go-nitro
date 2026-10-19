@@ -138,6 +138,10 @@ func applyOne(s, name, arg string) string {
 		return PascalCase(s)
 	case "snakecase", "snake":
 		return SnakeCase(s)
+	case "slug", "slugify":
+		return Slugify(s)
+	case "foldaccents", "unaccent":
+		return FoldAccents(s)
 	case "kebabcase", "kebab":
 		return KebabCase(s)
 	case "date":

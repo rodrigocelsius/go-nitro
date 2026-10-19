@@ -196,6 +196,21 @@ func (r *cachedRepo) Update(ctx context.Context, entity any) error {
 	return err
 }
 
+// UpdateFields forwards partial updates when the inner repository supports
+// them (falls back to a full Update otherwise).
+func (r *cachedRepo) UpdateFields(ctx context.Context, entity any, fields []string) error {
+	var err error
+	if pu, ok := r.inner.(domain.ResourcePartialUpdater); ok {
+		err = pu.UpdateFields(ctx, entity, fields)
+	} else {
+		err = r.inner.Update(ctx, entity)
+	}
+	if err == nil {
+		r.purge()
+	}
+	return err
+}
+
 func (r *cachedRepo) Delete(ctx context.Context, id any) error {
 	err := r.inner.Delete(ctx, id)
 	if err == nil {

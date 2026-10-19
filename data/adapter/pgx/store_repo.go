@@ -67,6 +67,13 @@ func (b *storeRepoBridge[T]) Update(ctx context.Context, entity any) error {
 	}
 	return b.inner.Update(ctx, t)
 }
+func (b *storeRepoBridge[T]) UpdateFields(ctx context.Context, entity any, fields []string) error {
+	t, ok := entity.(*T)
+	if !ok {
+		return fmt.Errorf("pgx: UpdateFields expects *T")
+	}
+	return b.inner.UpdateFields(ctx, t, fields)
+}
 func (b *storeRepoBridge[T]) Delete(ctx context.Context, id any) error {
 	return b.inner.Delete(ctx, id)
 }
@@ -146,6 +153,25 @@ func (r *StoreRepo[T]) Update(ctx context.Context, entity *T) error {
 	id, sets := structIDAndSets(entity, r.store.table, r.store.idCol)
 	if id == nil {
 		return fmt.Errorf("pgx: Update: missing id")
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	updated, err := r.store.Update(ctx, id, sets...)
+	if err != nil {
+		return err
+	}
+	*entity = *updated
+	return nil
+}
+
+// UpdateFields persists only the named Go fields (plus UpdatedAt when the
+// model has it) and reloads the row. See domain.ResourcePartialUpdater.
+func (r *StoreRepo[T]) UpdateFields(ctx context.Context, entity *T, fields []string) error {
+	domain.ApplyEntityDefaults(entity, domain.EntityDefaults{AutoTimestamps: true}, false)
+	id, sets := structIDAndSetsOnly(entity, r.store.table, r.store.idCol, fieldSet(fields))
+	if id == nil {
+		return fmt.Errorf("pgx: UpdateFields: missing id")
 	}
 	if len(sets) == 0 {
 		return nil
@@ -402,7 +428,22 @@ func valuesForColumns(entity any, cols []string) []any {
 	return vals
 }
 
+func fieldSet(fields []string) map[string]bool {
+	m := make(map[string]bool, len(fields)+1)
+	for _, f := range fields {
+		m[f] = true
+	}
+	m["UpdatedAt"] = true
+	return m
+}
+
 func structIDAndSets(entity any, table, idCol string) (id any, sets []expr.Assignment) {
+	return structIDAndSetsOnly(entity, table, idCol, nil)
+}
+
+// structIDAndSetsOnly is structIDAndSets restricted to Go field names in only
+// (nil = every column).
+func structIDAndSetsOnly(entity any, table, idCol string, only map[string]bool) (id any, sets []expr.Assignment) {
 	rv := reflect.ValueOf(entity)
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
@@ -415,6 +456,9 @@ func structIDAndSets(entity any, table, idCol string) (id any, sets []expr.Assig
 		}
 		if db == idCol || (idCol == "id" && strings.EqualFold(f.Name, "ID")) {
 			id = fv.Interface()
+			return
+		}
+		if only != nil && !only[f.Name] {
 			return
 		}
 		sets = append(sets, expr.Assignment{
