@@ -1,10 +1,10 @@
 module github.com/rodrigocelsius/go-nitro/adapters/auth/oauth2/v2
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/rodrigocelsius/go-nitro/domain/v2 v2.0.10
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.37.0
 )
 
 require github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.0.10 // indirect
