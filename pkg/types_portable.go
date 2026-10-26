@@ -38,7 +38,11 @@ type Decimal = decimal.Decimal
 
 // Latitude / Longitude / LatLng are WGS84 coords (float64, max 9 fractional digits).
 type Latitude = geo.Latitude
+
+// Longitude is a WGS84 longitude (see Latitude).
 type Longitude = geo.Longitude
+
+// LatLng is a WGS84 coordinate pair (see Latitude).
 type LatLng = geo.LatLng
 
 // MaxFracDigits is the canonical geo decimal scale.

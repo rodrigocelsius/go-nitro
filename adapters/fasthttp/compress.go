@@ -9,13 +9,11 @@ import (
 
 var (
 	acceptEncHeader = []byte("Accept-Encoding")
-	gzipValue       = []byte("gzip")
 	varyHeader      = []byte("Vary")
 )
 
 type gzipWriter struct {
-	writer *gzip.Writer
-	buf    []byte
+	buf []byte
 }
 
 var gzipPool = &sync.Pool{

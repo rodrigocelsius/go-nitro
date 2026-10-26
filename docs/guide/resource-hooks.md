@@ -9,8 +9,16 @@
 | `AfterCreate` | After successful `repo.Create` |
 | `BeforeUpdate` | After bind/merge / defaults / BeforeWrite, before `repo.Update` |
 | `AfterUpdate` | After successful `repo.Update` |
+| `BeforeDelete` | After the access check, before `repo.Delete` (veto / cascade) |
 | `AfterDelete` | After successful `repo.Delete` |
 | `OnMutate` | After create/update/delete (`action` = `"create"` \| `"update"` \| `"delete"`) |
+| `AfterCommit` | After the transaction committed, outside it (queue, e-mail); cannot fail the request |
+
+**Atomic by convention:** with a BLinq repository, a Resource that declares any
+write hook runs load + `Before*` + SQL + `After*` + `OnMutate` in **one
+transaction** — a hook error rolls the write back, and every Store call made
+with the hook's `ctx` joins it. `NoTx: true` opts out. Details:
+[transactions.md](transactions.md).
 
 Prefer **`BeforeWrite`** when the same normalize/denorm logic applies to both create and update.
 
@@ -57,8 +65,9 @@ app.Resource(&model.Order{}, store, &nitro.ResourceConfig{
 **Notes:**
 
 - `entity` is the same pointer passed to `repo.Create` (with ID/timestamps already set).
-- Return an error to fail the HTTP request (create is not rolled back automatically — use `db.Tx` in `BeforeCreate`/`AfterCreate` or a Command for atomic multi-table writes).
-- For Postgres, prefer `sqladapter.DB.Tx` when order + invoice must commit together.
+- Return an error to fail the HTTP request: with a BLinq repository the order **and** the invoice are rolled back (same transaction, through `ctx`).
+- Use the hook's `ctx` for every Store call — that is what joins the transaction.
+- Side effects that must only happen after the data is saved go in `AfterCommit`.
 
 ## Example
 

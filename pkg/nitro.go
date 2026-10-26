@@ -74,8 +74,14 @@ type ResourceListResult = domain.ResourceListResult
 
 // ListQuery / QueryableLister — Resource List with BLinq push-down (pgx.AdaptStore).
 type ListQuery = domain.ListQuery
+
+// ListFilter is one ?field=value filter of a Resource list request.
 type ListFilter = domain.ListFilter
+
+// ListSort is one ?sort= key (Desc for "-field").
 type ListSort = domain.ListSort
+
+// QueryableLister is implemented by repositories that run List filters/sort in SQL.
 type QueryableLister = domain.QueryableLister
 
 // CompressConfig configures the compression middleware.

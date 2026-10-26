@@ -115,14 +115,14 @@ func patchRoutesResource(names resourceNames, fields []fieldSpec, sql bool) {
 		body = fmt.Sprintf(`package handler
 
 import (
-	sqladapter "github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2"
 	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 
 	"%s/internal/model"
 )
 
 // Register mounts health + Resource CRUD for %s (Convention over Configuration).
-func Register(app *nitro.App, store *sqladapter.Store[model.%s]) {
+// store is any typed store (sqladapter.StoreFor[model.%s](db) in main).
+func Register(app *nitro.App, store nitro.AsResourceRepository) {
 	app.Get("/health", Health)
 	app.Resource(&model.%s{}, store, %s)
 }
@@ -155,11 +155,10 @@ func Register(app *nitro.App, repo *nitro.MemoryRepository[model.%s]) {
 			if sql {
 				fn := fmt.Sprintf(`
 
-func %s(app *nitro.App, store *sqladapter.Store[model.%s]) {
+func %s(app *nitro.App, store nitro.AsResourceRepository) {
 	app.Resource(&model.%s{}, store, %s)
 }
-`, fnName, names.Type, names.Type, cfg)
-				src = ensureImport(src, "sqladapter", "github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2")
+`, fnName, names.Type, cfg)
 				src = ensureImport(src, "", mod+"/internal/model")
 				_ = writeFileFmt(path, []byte(strings.TrimRight(src, "\n")+fn), 0644)
 			} else {
@@ -253,7 +252,7 @@ func patchMainResource(names resourceNames, sql bool) {
 	}
 	src := string(b)
 	if strings.Contains(src, "app.Resource(&model."+names.Type) ||
-		(strings.Contains(src, "StoreOf[model."+names.Type+"]") && strings.Contains(src, "handler.Register(app, store)")) {
+		((strings.Contains(src, "StoreOf[model."+names.Type+"]") || strings.Contains(src, "StoreFor[model."+names.Type+"]")) && strings.Contains(src, "handler.Register(app, store)")) {
 		fmt.Println("nitrogen: main already wires this Resource")
 		return
 	}
@@ -265,7 +264,7 @@ func patchMainResource(names resourceNames, sql bool) {
 		!strings.Contains(src, "handler.Register"+names.Type+"(") {
 		var wire string
 		if sql {
-			wire = fmt.Sprintf("	handler.Register%s(app, sqladapter.StoreOf[model.%s](db, %q))\n", names.Type, names.Type, names.Table)
+			wire = fmt.Sprintf("	handler.Register%s(app, sqladapter.StoreFor[model.%s](db))\n", names.Type, names.Type)
 		} else {
 			wire = fmt.Sprintf("	handler.Register%s(app, nitro.NewMemoryRepo[model.%s]())\n", names.Type, names.Type)
 		}
@@ -302,21 +301,21 @@ func patchMainResource(names resourceNames, sql bool) {
 				src = strings.Replace(src, fmt.Sprintf("\t\"%s/internal/handler\"\n", mod),
 					modelImp+"\t\""+mod+"/internal/handler\"\n", 1)
 			}
-			wire := fmt.Sprintf("\tstore := sqladapter.StoreOf[model.%s](db, %q)\n", names.Type, names.Table)
+			wire := fmt.Sprintf("\tstore := sqladapter.StoreFor[model.%s](db)\n", names.Type)
 			switch {
 			case strings.Contains(src, "handler.Register(app)"):
 				src = strings.Replace(src, "\thandler.Register(app)", wire+"\thandler.Register(app, store)", 1)
 			case strings.Contains(src, "handler.Register(app, repo)"):
 				src = strings.Replace(src, "handler.Register(app, repo)", "handler.Register(app, store)", 1)
-				if !strings.Contains(src, "StoreOf[model."+names.Type) {
+				if !strings.Contains(src, "StoreOf[model."+names.Type) && !strings.Contains(src, "StoreFor[model."+names.Type) {
 					src = strings.Replace(src, "handler.Register(app, store)", wire+"\thandler.Register(app, store)", 1)
 				}
 			default:
-				fmt.Printf("nitrogen: tip — wire sqladapter.StoreOf[model.%s](db, %q) + handler.Register(app, store)\n", names.Type, names.Table)
+				fmt.Printf("nitrogen: tip — wire sqladapter.StoreFor[model.%s](db) + handler.Register(app, store)\n", names.Type)
 			}
 		} else {
-			res := fmt.Sprintf("\tstore := sqladapter.StoreOf[%s](db, %q)\n\tapp.Resource(&%s{}, store, &nitro.ResourceConfig{NoCache: true})\n",
-				names.Type, names.Table, names.Type)
+			res := fmt.Sprintf("\tstore := sqladapter.StoreFor[%s](db)\n\tapp.Resource(&%s{}, store, &nitro.ResourceConfig{NoCache: true})\n",
+				names.Type, names.Type)
 			if strings.Contains(src, "app.Listen") {
 				src = strings.Replace(src, "\tapp.Listen", res+"\tapp.Listen", 1)
 			}

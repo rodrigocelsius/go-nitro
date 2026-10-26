@@ -15,8 +15,6 @@ replace github.com/rodrigocelsius/go-nitro/usecases/v2 => ./usecases
 // Adapters (concrete implementations)
 replace github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2 => ./adapters/fasthttp
 
-replace github.com/rodrigocelsius/go-nitro/adapters/json/v2 => ./adapters/json
-
 replace github.com/rodrigocelsius/go-nitro/adapters/ratelimit/v2 => ./adapters/ratelimit
 
 replace github.com/rodrigocelsius/go-nitro/adapters/cache/v2 => ./adapters/cache
@@ -24,8 +22,6 @@ replace github.com/rodrigocelsius/go-nitro/adapters/cache/v2 => ./adapters/cache
 replace github.com/rodrigocelsius/go-nitro/adapters/log/v2 => ./adapters/log
 
 replace github.com/rodrigocelsius/go-nitro/adapters/otel/v2 => ./adapters/otel
-
-replace github.com/rodrigocelsius/go-nitro/adapters/queue/v2 => ./adapters/queue
 
 replace github.com/rodrigocelsius/go-nitro/adapters/amqp/v2 => ./adapters/amqp
 
@@ -57,6 +53,8 @@ replace github.com/rodrigocelsius/go-nitro/codegen/openapi/v2 => ./codegen/opena
 // Facade (public API)
 replace github.com/rodrigocelsius/go-nitro/pkg/v2 => ./pkg
 
+replace github.com/rodrigocelsius/go-nitro/adapters/kafka/v2 => ./adapters/kafka
+replace github.com/rodrigocelsius/go-nitro/adapters/nats/v2 => ./adapters/nats
 replace github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 => ./pkg/uuid
 
 // Data layer
@@ -71,7 +69,6 @@ replace github.com/rodrigocelsius/go-nitro/data/adapter/pgx/v2 => ./data/adapter
 replace github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2 => ./data/adapter/sql
 
 // Other packages
-replace github.com/rodrigocelsius/go-nitro/cache/v2 => ./cache
 
 replace github.com/rodrigocelsius/go-nitro/queue/v2 => ./queue
 

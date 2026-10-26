@@ -78,3 +78,12 @@ func (r *stdRows) Values() ([]any, error) {
 func (r *stdRows) Columns() []string { return r.cols }
 func (r *stdRows) Err() error        { return r.rows.Err() }
 func (r *stdRows) Close()            { _ = r.rows.Close() }
+
+// BeginTx opens a database/sql transaction (gateway.TxBeginner → Gateway.InTx).
+func (e *stdExec) BeginTx(ctx context.Context) (gateway.TxExecutor, error) {
+	tx, err := e.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &stdTxExec{tx: tx}, nil
+}

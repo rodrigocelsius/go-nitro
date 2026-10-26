@@ -233,9 +233,6 @@ func TestRadixRouter_SortChildrenByHits(t *testing.T) {
 
 	// Check hits before sort
 	methodNode := rt.methodNode("GET")
-	if methodNode.children[0].segment == "/b" {
-		// Already in correct order (or /b happened to be first)
-	}
 
 	rt.SortChildrenByHits()
 

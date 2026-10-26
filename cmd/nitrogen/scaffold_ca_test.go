@@ -146,11 +146,11 @@ var app *nitro.App
 	if !strings.Contains(string(repo), "sqladapter.Store") {
 		t.Fatalf("expected sqladapter store, got %s", repo)
 	}
-	if !strings.Contains(string(repo), "pgxadapter") {
-		// should NOT hardcode pgx in generated repo
+	if strings.Contains(string(repo), "pgxadapter") {
+		t.Fatalf("generated repository must not hardcode pgx: %s", repo)
 	}
 	mainb, _ := os.ReadFile("cmd/server/main.go")
-	if !strings.Contains(string(mainb), "sqladapter.StoreOf[model.Product]") {
+	if !strings.Contains(string(mainb), "sqladapter.StoreFor[model.Product](db)") {
 		t.Fatalf("main: %s", mainb)
 	}
 	if strings.Contains(string(mainb), "pgxadapter.Open") {
@@ -280,5 +280,23 @@ func TestPreferResourceMode_BasicWithSQL(t *testing.T) {
 	}
 	if !preferResourceMode(scaffoldOpts{resource: true}) {
 		t.Fatal("--resource always wins")
+	}
+}
+
+// make:usecase after make:scaffold must not rewrite the repository port
+// (it used to drop Filter.Q and break the generated handler/repository).
+func TestMakeUsecaseKeepsScaffoldRepositoryPort(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	_ = os.WriteFile("go.mod", []byte("module example.com/app\n\ngo 1.22\n"), 0644)
+	_ = os.MkdirAll("internal/usecase/product", 0755)
+	_ = os.MkdirAll("internal/model", 0755)
+	_ = os.MkdirAll("internal/handler", 0755)
+	port := "package product\n\ntype Filter struct {\n\tQ string\n}\n"
+	_ = os.WriteFile("internal/usecase/product/repository.go", []byte(port), 0644)
+	ensureUsecaseRepoInterface("Product", nil)
+	b, _ := os.ReadFile("internal/usecase/product/repository.go")
+	if string(b) != port {
+		t.Fatalf("repository port rewritten:\n%s", b)
 	}
 }

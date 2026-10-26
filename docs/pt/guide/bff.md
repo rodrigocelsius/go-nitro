@@ -102,10 +102,10 @@ cfg.CacheTTL = 5 * time.Minute
 
 | Method | Path | Descrição |
 |--------|------|-------------|
-| `POST` | `{prefix}/login` | Login com e-mail/senha |
-| `POST` | `{prefix}/register` | Cadastro de usuário |
-| `POST` | `{prefix}/refresh` | Refresh de token |
-| `POST` | `{prefix}/logout` | Limpa cookies |
+| `POST` | `{prefix}/auth/login` | Login com e-mail/senha |
+| `POST` | `{prefix}/auth/register` | Cadastro de usuário |
+| `POST` | `{prefix}/auth/refresh` | Refresh de token |
+| `POST` | `{prefix}/auth/logout` | Limpa cookies |
 | `GET` | `{prefix}/csrf` | Obtém token CSRF |
 
 ## Início rápido: Mobile BFF
@@ -122,7 +122,6 @@ cfg.RefreshTokenTTL = 30 * 24 * time.Hour
 // Mobile-specific features
 cfg.EnableDeviceTracking = true
 cfg.MaxDevicesPerUser = 5
-cfg.CompactResponse = true    // Minimized JSON for bandwidth savings
 
 // Register mobile auth routes
 app.MobileBFFRoutes("/mobile/auth", auth, cfg, tokenProvider)
@@ -145,11 +144,14 @@ cfg.RefreshTokenTTL = 30 * 24 * time.Hour
 cfg.EnableDeviceTracking = true
 cfg.MaxDevicesPerUser = 5
 
-// Push notifications
-cfg.EnablePushNotifications = true
+// Os dispositivos ficam em cfg.Devices (memória por padrão; implemente
+// nitro.DeviceStore sobre o seu banco para várias réplicas). Login/registro
+// com {"device": {...}}; requisições com X-Device-ID atualizam last_seen_at.
+// Tokens FCM/APNs ficam salvos no dispositivo; o envio de push é do app.
+cfg.Devices = nitro.NewMemoryDeviceStore(cfg.MaxDevicesPerUser)
 
 // Bandwidth optimization
-cfg.CompactResponse = true  // Removes whitespace from JSON
+// EnableBiometric / EnableOffline / DeltaSync / CompactResponse são reservados (ainda sem comportamento embutido)
 ```
 
 ### Rotas do Mobile BFF
@@ -158,10 +160,12 @@ cfg.CompactResponse = true  // Removes whitespace from JSON
 
 | Method | Path | Descrição |
 |--------|------|-------------|
-| `POST` | `{prefix}/login` | Login com e-mail/senha |
-| `POST` | `{prefix}/register` | Cadastro de usuário |
-| `POST` | `{prefix}/refresh` | Refresh de token |
-| `POST` | `{prefix}/logout` | Invalida tokens |
+| `POST` | `{prefix}/auth/login` | Login com e-mail/senha |
+| `POST` | `{prefix}/auth/register` | Cadastro de usuário |
+| `POST` | `{prefix}/auth/refresh` | Refresh de token |
+| `POST` | `{prefix}/auth/logout` | Invalida tokens |
+| `GET` | `{prefix}/devices` | Dispositivos do usuário autenticado (`EnableDeviceTracking`) |
+| `DELETE` | `{prefix}/devices/:id` | Remove um dispositivo do usuário |
 
 ## Proxy Handler
 
@@ -278,7 +282,6 @@ func main() {
     )
     cfg.EnableDeviceTracking = true
     cfg.MaxDevicesPerUser = 5
-    cfg.CompactResponse = true
 
     auth := setupAuth()
     tokenProvider := nitro.JWTProvider(nitro.AuthConfig{Secret: "secret"})
@@ -307,9 +310,8 @@ func main() {
 | Proteção CSRF | Sim | Não (stateless) |
 | TTL do token | 15 min / 7 dias | 30 min / 30 dias |
 | Rastreamento de dispositivo | Não | Sim (máx. 5) |
-| Resposta compacta | Não | Sim |
-| Push notifications | Não | Sim |
+| Tokens de push (FCM/APNs) salvos | Não | Sim (o envio é do app) |
 
 ## Exemplo completo
 
-Veja [`examples/bff-web/`](../../examples/bff-web/main.go) e [`examples/bff-mobile/`](../../examples/bff-mobile/main.go) para exemplos completos e funcionais.
+Os trechos acima são completos; `pkg/bff_devices_test.go` exercita o fluxo mobile de ponta a ponta (registro → login em vários dispositivos → listagem → remoção).

@@ -55,3 +55,9 @@ type cmdTagResult struct {
 }
 
 func (r cmdTagResult) RowsAffected() int64 { return r.tag.RowsAffected() }
+
+// Commit commits the transaction (gateway.TxExecutor).
+func (a *txSQLAdapter) Commit(ctx context.Context) error { return a.tx.Commit(ctx) }
+
+// Rollback rolls back the transaction (gateway.TxExecutor).
+func (a *txSQLAdapter) Rollback(ctx context.Context) error { return a.tx.Rollback(ctx) }

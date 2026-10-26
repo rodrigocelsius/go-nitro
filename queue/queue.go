@@ -17,6 +17,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -152,14 +153,22 @@ type Config struct {
 	QueueSize  int           `json:"queue_size"`
 	RetryMax   int           `json:"retry_max"`
 	RetryDelay time.Duration `json:"retry_delay"`
+	// PublishTimeout is how long Publish waits for room when the buffer is
+	// full (backpressure) before failing with ErrQueueFull. The ctx deadline
+	// wins when shorter. 0 → 1s; negative → fail immediately.
+	PublishTimeout time.Duration `json:"publish_timeout"`
 }
+
+// ErrQueueFull is returned when the in-memory buffer stays full for PublishTimeout.
+var ErrQueueFull = errors.New("queue: queue is full")
 
 // DefaultConfig returns default settings.
 func DefaultConfig() Config {
 	return Config{
-		Workers:    4,
-		QueueSize:  1000,
-		RetryMax:   3,
-		RetryDelay: time.Second,
+		Workers:        4,
+		QueueSize:      1000,
+		RetryMax:       3,
+		RetryDelay:     time.Second,
+		PublishTimeout: time.Second,
 	}
 }

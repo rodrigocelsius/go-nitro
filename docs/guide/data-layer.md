@@ -498,6 +498,43 @@ _ = pool.Ping(ctx)
 _ = pool.Stat() // pgxpool.Stat
 ```
 
+### Pool sizing (all engines)
+
+Every engine gets **in-process pooling by default** — the fallback when no external pooler is configured: requests beyond the pool size wait inside the process for a free connection instead of opening new ones until the server refuses them.
+
+| Env | Default | Notes |
+|-----|---------|-------|
+| `NITRO_DB_MAX_CONNS` | pgx: `max(4, NumCPU)` · MySQL/MariaDB/SQL Server: `max(10, 4×NumCPU)` · SQLite file: 4 | Keep `replicas × MAX_CONNS` below the server limit (`max_connections`; MySQL = 151). `0` = unlimited (database/sql engines) |
+| `NITRO_DB_MIN_CONNS` | 0 | pgx only |
+| `NITRO_DB_MAX_IDLE_CONNS` | 10 | `database/sql` only (Go's default is 2 → churn under bursts) |
+| `NITRO_DB_CONN_MAX_LIFETIME` | pgx: 1h · sql: 30m | Below proxy / load-balancer idle timeouts |
+| `NITRO_DB_CONN_MAX_IDLE_TIME` | pgx: 30m · sql: 5m | |
+
+`PoolConfig{MaxConns, MinConns}` and `pool_max_conns=` in the DSN still win. In-memory SQLite keeps the `database/sql` defaults.
+
+**SQLite files** also get `_pragma=busy_timeout(5000)`, `_pragma=journal_mode(WAL)` and `_txlock=immediate` unless the DSN sets them (`NITRO_SQLITE_PRAGMAS=0` opts out): concurrent writers queue for the lock instead of failing with `database is locked`, and readers do not block the writer.
+
+### Best option per database
+
+| Database | Many app instances / high concurrency | Without it (Nitro fallback) |
+|----------|----------------------------------------|-----------------------------|
+| PostgreSQL | **PgBouncer** (transaction pooling) — or RDS Proxy / Supavisor / pgcat, which speak the same protocol | pgxpool per process; PgBouncer mode is enabled automatically on port 6432 |
+| MySQL / MariaDB | **ProxySQL** (MySQL & MariaDB) or **MaxScale** (MariaDB); RDS Proxy on AWS | bounded `database/sql` pool + connection recycling |
+| SQL Server | the driver pools already; **Azure SQL** / SQL Server raise `max worker threads` — no external pooler needed | bounded `database/sql` pool |
+| SQLite | single writer by design: one instance, or move to a server database | busy_timeout + WAL + small pool |
+
+### PgBouncer (transaction pooling)
+
+Enable with **one** of: `?pgbouncer=true` in `DATABASE_URL`, `NITRO_DB_PGBOUNCER=1`, `PoolConfig{PgBouncer: true}` — or nothing at all when the DSN uses port **6432** (PgBouncer's default; `NITRO_DB_PGBOUNCER=0` opts out). Nitro then:
+
+- uses the **simple query protocol** (`default_query_exec_mode=simple_protocol`): pgx's default named prepared statements break when PgBouncer hands the next statement to another server connection (`prepared statement "stmtcache_…" does not exist`). An explicit `default_query_exec_mode` in the DSN wins (e.g. `cache_describe` with PgBouncer ≥ 1.21 and `max_prepared_statements`);
+- runs migrations over **`DATABASE_DIRECT_URL`** (or `NITRO_DB_DIRECT_URL`) — a DSN straight to Postgres — because the migration lock is a session-level `pg_advisory_lock`. Without it, migrations run without the lock (log warning): run them from a single instance;
+- `nitro.InTx` / Resource transactions work unchanged (one transaction = one server connection in PgBouncer).
+
+Avoid session state through PgBouncer: `SET`, `LISTEN`, temporary tables and session advisory locks do not survive between transactions. `search_path` as a startup parameter needs `track_extra_parameters = search_path` (PgBouncer ≥ 1.20) or `ignore_startup_parameters`.
+
+Retryable conflicts (deadlock / serialization: Postgres 40001/40P01, MySQL 1213/1205) surface as 409 `tx_conflict` — see [transactions.md](transactions.md).
+
 ### Migrations (blinq/migrate)
 
 ```go

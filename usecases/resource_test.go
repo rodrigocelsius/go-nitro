@@ -448,8 +448,8 @@ func TestApplyResourceDefaults(t *testing.T) {
 	old := item.UpdatedAt
 	time.Sleep(time.Millisecond)
 	applyResourceDefaults(item, DefaultResourceOpts(), false)
-	if !item.UpdatedAt.After(old) && item.UpdatedAt.Equal(old) {
-		// UpdatedAt should be refreshed; allow equal if clock resolution low
+	if item.UpdatedAt.Before(old) {
+		t.Fatalf("UpdatedAt went backwards: %v < %v", item.UpdatedAt, old)
 	}
 	if item.UpdatedAt.IsZero() {
 		t.Fatal("UpdatedAt should be set on update")

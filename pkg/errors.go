@@ -26,30 +26,38 @@ func wrapAdapter(mw domain.Handler) Handler {
 	}
 }
 
+// BadRequest returns an HTTP 400 error; msg overrides the default message.
 func BadRequest(msg ...string) error {
 	return &domain.BadRequestError{Message: firstMsg("bad request", msg...)}
 }
 
+// Unauthorized returns an HTTP 401 error; msg overrides the default message.
 func Unauthorized(msg ...string) error {
 	return &domain.UnauthorizedError{Message: firstMsg("unauthorized", msg...)}
 }
 
+// Forbidden returns an HTTP 403 error; msg overrides the default message.
 func Forbidden(msg ...string) error {
 	return &domain.ForbiddenError{Message: firstMsg("forbidden", msg...)}
 }
 
+// NotFound returns an HTTP 404 error; msg overrides the default message.
 func NotFound(msg ...string) error {
 	return &domain.NotFoundError{Message: firstMsg("not found", msg...)}
 }
 
+// Conflict returns an HTTP 409 error; msg overrides the default message.
 func Conflict(msg ...string) error {
 	return &domain.ConflictError{Message: firstMsg("conflict", msg...)}
 }
 
+// UnprocessableEntity returns an HTTP 422 error; msg overrides the default message.
 func UnprocessableEntity(msg ...string) error {
 	return &domain.UnprocessableEntityError{Message: firstMsg("unprocessable entity", msg...)}
 }
 
+// InternalError wraps err as an HTTP 500 (the client sees a generic message;
+// err is kept for logs and errors.Is/As).
 func InternalError(err error) error {
 	return &domain.InternalServerError{Err: err}
 }

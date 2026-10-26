@@ -50,10 +50,9 @@ func TestFlightGroup_ErrorShared(t *testing.T) {
 }
 
 type countingRepo struct {
-	mem     *MemoryRepository[raceTodo]
-	listErr error
-	lists   int32
-	gets    int32
+	mem   *MemoryRepository[raceTodo]
+	lists int32
+	gets  int32
 }
 
 func (c *countingRepo) FindByID(ctx context.Context, id any) (any, error) {

@@ -22,6 +22,7 @@ func NewMemoryUserStore() *MemoryUserStore {
 	}
 }
 
+// FindByEmail returns the user with email (case-insensitive).
 func (s *MemoryUserStore) FindByEmail(_ context.Context, email string) (*User, error) {
 	u, ok := s.byEmail.Get(NormalizeEmail(email))
 	if !ok {
@@ -30,6 +31,7 @@ func (s *MemoryUserStore) FindByEmail(_ context.Context, email string) (*User, e
 	return u, nil
 }
 
+// FindByID returns the user with id.
 func (s *MemoryUserStore) FindByID(_ context.Context, id string) (*User, error) {
 	u, ok := s.users.Get(id)
 	if !ok {

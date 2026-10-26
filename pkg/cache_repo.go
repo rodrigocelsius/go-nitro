@@ -95,7 +95,17 @@ func applyResourceCache(repo domain.ResourceRepository, opts resourceOpts) domai
 	return CacheRepo(repo, ttl)
 }
 
+// InTx forwards domain.Transactor to the inner repository.
+func (r *cachedRepo) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return domain.RunInTx(ctx, r.inner, fn)
+}
+
 func (r *cachedRepo) FindByID(ctx context.Context, id any) (any, error) {
+	if domain.CacheBypassed(ctx) {
+		// Inside a unit of work / write path read the row the transaction
+		// sees, never a cached copy (and never cache uncommitted state).
+		return r.inner.FindByID(ctx, id)
+	}
 	key := "id:" + IDKey(id)
 	if v, ok := r.lookup(key); ok {
 		return v, nil
@@ -183,7 +193,7 @@ func listQueryCacheKey(q domain.ListQuery) string {
 func (r *cachedRepo) Create(ctx context.Context, entity any) error {
 	err := r.inner.Create(ctx, entity)
 	if err == nil {
-		r.purge()
+		r.purgeAfterWrite(ctx)
 	}
 	return err
 }
@@ -191,7 +201,7 @@ func (r *cachedRepo) Create(ctx context.Context, entity any) error {
 func (r *cachedRepo) Update(ctx context.Context, entity any) error {
 	err := r.inner.Update(ctx, entity)
 	if err == nil {
-		r.purge()
+		r.purgeAfterWrite(ctx)
 	}
 	return err
 }
@@ -206,7 +216,7 @@ func (r *cachedRepo) UpdateFields(ctx context.Context, entity any, fields []stri
 		err = r.inner.Update(ctx, entity)
 	}
 	if err == nil {
-		r.purge()
+		r.purgeAfterWrite(ctx)
 	}
 	return err
 }
@@ -214,7 +224,7 @@ func (r *cachedRepo) UpdateFields(ctx context.Context, entity any, fields []stri
 func (r *cachedRepo) Delete(ctx context.Context, id any) error {
 	err := r.inner.Delete(ctx, id)
 	if err == nil {
-		r.purge()
+		r.purgeAfterWrite(ctx)
 	}
 	return err
 }
@@ -280,6 +290,15 @@ func (r *cachedRepo) sweepLocked() {
 	excess := len(live) - r.maxEntries
 	for i := 0; i < excess; i++ {
 		delete(r.items, live[i].key)
+	}
+}
+
+// purgeAfterWrite purges now and again after COMMIT when ctx is in a tx, so
+// a read racing the commit cannot leave pre-transaction rows cached.
+func (r *cachedRepo) purgeAfterWrite(ctx context.Context) {
+	r.purge()
+	if domain.InTx(ctx) {
+		domain.AfterCommit(ctx, func(context.Context) { r.purge() })
 	}
 }
 

@@ -200,7 +200,7 @@ func (r *reflectRepo) Create(ctx context.Context, entity any) error {
 	if err != nil {
 		return err
 	}
-	reflect.ValueOf(entity).Elem().Set(reflect.ValueOf(created).Elem())
+	mergeDBColumns(entity, created)
 	return nil
 }
 
@@ -221,7 +221,7 @@ func (r *reflectRepo) UpdateFields(ctx context.Context, entity any, fields []str
 	if err != nil {
 		return err
 	}
-	reflect.ValueOf(entity).Elem().Set(reflect.ValueOf(updated).Elem())
+	mergeDBColumns(entity, updated)
 	return nil
 }
 
@@ -241,7 +241,7 @@ func (r *reflectRepo) Update(ctx context.Context, entity any) error {
 	if err != nil {
 		return err
 	}
-	reflect.ValueOf(entity).Elem().Set(reflect.ValueOf(updated).Elem())
+	mergeDBColumns(entity, updated)
 	return nil
 }
 

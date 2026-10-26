@@ -30,9 +30,6 @@ func TestStore_AsResourceRepository(t *testing.T) {
 	if repo == nil {
 		t.Fatal("nil repo")
 	}
-	if _, ok := repo.(domain.AsResourceRepository); ok {
-		// Store itself implements the interface; repo is the adapted bridge.
-	}
 	if _, ok := repo.(domain.QueryableLister); !ok {
 		t.Fatal("QueryableLister")
 	}

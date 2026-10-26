@@ -101,26 +101,3 @@ func convertAndSet(field reflect.Value, value string) error {
 	}
 	return nil
 }
-
-// QueryParam returns a query parameter as a string.
-// Delegates to the adapter via the interface.
-func queryParamFromCtx(c *domain.Ctx, key string) string {
-	type querier interface {
-		Query(key string) string
-	}
-	if q, ok := c.AdapterData.(querier); ok {
-		return q.Query(key)
-	}
-	return ""
-}
-
-// HeaderParam returns a header as a string.
-func headerParamFromCtx(c *domain.Ctx, key string) string {
-	type headerer interface {
-		Header(key string) string
-	}
-	if h, ok := c.AdapterData.(headerer); ok {
-		return h.Header(key)
-	}
-	return ""
-}

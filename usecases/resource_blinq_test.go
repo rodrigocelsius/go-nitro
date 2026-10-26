@@ -24,13 +24,6 @@ func (m *queryableMock) ListQuery(_ context.Context, q domain.ListQuery) (*domai
 	return m.res, nil
 }
 
-type fakeCtx struct {
-	domain.Ctx
-	params map[string]string
-}
-
-func (f *fakeCtx) QueryParam(name string) string { return f.params[name] }
-
 // buildListQuery is tested via direct call with a minimal Ctx-like — domain.Ctx is a struct.
 // We test the pure helper by constructing domain.Ctx if QueryParam is a method on pointer.
 

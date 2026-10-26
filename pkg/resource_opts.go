@@ -89,7 +89,22 @@ type ResourceConfig struct {
 	AfterCreate  func(ctx context.Context, entity any) error
 	AfterUpdate  func(ctx context.Context, entity any) error
 	AfterDelete  func(ctx context.Context, id any) error
+	// BeforeDelete runs after the access check, before the row is deleted —
+	// validate ("customer has open invoices") or cascade in the same tx.
+	BeforeDelete func(ctx context.Context, id any) error
 	OnMutate     func(ctx context.Context, action string, entityOrID any) error
+	// AfterCommit runs once the write and all hooks committed, outside the
+	// transaction: publish an event, send an e-mail, call another service.
+	// It cannot fail the request (the data is already saved).
+	AfterCommit func(ctx context.Context, action string, entityOrID any)
+
+	// NoTx opts out of the transactional write path. By convention, when the
+	// repository supports transactions (BLinq Store / sqladapter) and any
+	// write hook (BeforeWrite, Before*/After*, OnMutate) or Command is set,
+	// each write runs load + hooks + SQL + OnMutate in one transaction: a hook
+	// error rolls the write back, and every Store call made with the hook's
+	// ctx joins it. Transient conflicts answer 409 {"code":"tx_conflict"}.
+	NoTx bool
 
 	// OwnerCheck, when set, runs after Get/Update/Delete load the entity by
 	// :id and before it is returned/mutated/removed — return false to deny
@@ -128,6 +143,10 @@ type ResourceConfig struct {
 	Commands []ResourceCommand
 	// Queries are named read routes: GET /queries/{name}.
 	Queries []ResourceQuery
+
+	// l2ReadThrough is set by the App cache convention (SetCache): reads go
+	// through Cache instead of the per-process L1.
+	l2ReadThrough bool
 }
 
 // ResourceExtraRoute is a custom route under a Resource prefix.
@@ -178,6 +197,8 @@ func (c *ResourceConfig) toOpts() resourceOpts {
 	o.AfterCreate = c.AfterCreate
 	o.AfterUpdate = c.AfterUpdate
 	o.AfterDelete = c.AfterDelete
+	o.BeforeDelete = c.BeforeDelete
+	o.AfterCommit = c.AfterCommit
 	o.OwnerCheck = c.OwnerCheck
 
 	userOnMutate := c.OnMutate
@@ -186,6 +207,11 @@ func (c *ResourceConfig) toOpts() resourceOpts {
 		pattern := c.CacheBustPattern
 		o.OnMutate = func(ctx context.Context, action string, entityOrID any) error {
 			Bust(cacheInst, pattern)
+			// Bust again after COMMIT: a read between the write and the
+			// commit may have re-cached the old rows (no-op outside a tx).
+			if domain.InTx(ctx) {
+				domain.AfterCommit(ctx, func(context.Context) { Bust(cacheInst, pattern) })
+			}
 			if userOnMutate != nil {
 				return userOnMutate(ctx, action, entityOrID)
 			}
@@ -236,4 +262,28 @@ func (c *ResourceConfig) extraMiddleware(write bool) []Handler {
 		out = append(out, c.ReadMiddleware...)
 	}
 	return out
+}
+
+// hasWriteHooks reports whether the Resource runs user code around writes
+// (the case where a transaction is needed to keep hooks and write atomic).
+func (c *ResourceConfig) hasWriteHooks() bool {
+	if c == nil {
+		return false
+	}
+	return c.BeforeWrite != nil || c.BeforeCreate != nil || c.BeforeUpdate != nil ||
+		c.BeforeDelete != nil || c.AfterCreate != nil || c.AfterUpdate != nil ||
+		c.AfterDelete != nil || c.OnMutate != nil
+}
+
+// resourceTransactor returns the repository as a Transactor when the
+// convention applies (see ResourceConfig.NoTx), else nil.
+func resourceTransactor(repo domain.ResourceRepository, c *ResourceConfig) domain.Transactor {
+	if c == nil || c.NoTx || repo == nil {
+		return nil
+	}
+	t, ok := repo.(domain.Transactor)
+	if !ok {
+		return nil
+	}
+	return t
 }

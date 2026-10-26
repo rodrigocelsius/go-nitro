@@ -14,6 +14,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// Use adds a global middleware (runs for every route, in registration order).
 func (a *App) Use(mw Handler) *App {
 	a.inner.Use(wrapHandler(mw))
 	return a

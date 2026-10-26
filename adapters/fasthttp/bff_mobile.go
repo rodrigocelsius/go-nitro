@@ -25,21 +25,27 @@ type MobileBFFConfig struct {
 	// Device management
 	EnableDeviceTracking bool `json:"enable_device_tracking"`
 	MaxDevicesPerUser    int  `json:"max_devices_per_user"` // 5
+	// Devices persists devices (nil → process-wide in-memory store).
+	Devices DeviceStore `json:"-"`
 
-	// Push notifications
+	// Push notifications: device FCM/APNs tokens are stored with the device
+	// (DeviceStore); sending pushes is up to the application.
 	EnablePushNotifications bool   `json:"enable_push_notifications"`
 	FCMServerKey            string `json:"fcm_server_key"`
 	APNSKeyID               string `json:"apns_key_id"`
 	APNSPrivateKey          string `json:"apns_private_key"`
 
 	// Biometric auth
+	// Reserved: no built-in behavior yet (implement in the app).
 	EnableBiometric bool `json:"enable_biometric"`
 
 	// Offline support
+	// Reserved: no built-in behavior yet (implement in the app).
 	EnableOffline   bool          `json:"enable_offline"`
 	OfflineCacheTTL time.Duration `json:"offline_cache_ttl"` // 24h
 
 	// Mobile-specific
+	// Reserved: no built-in behavior yet (responses are already compact JSON).
 	CompactResponse bool `json:"compact_response"` // compact JSON
 	DeltaSync       bool `json:"delta_sync"`       // delta synchronization
 }
@@ -93,9 +99,8 @@ func MobileBFFMiddleware(cfg MobileBFFConfig, tokenProvider ports.TokenProvider)
 
 		// 5. Update device last seen (if tracking enabled)
 		if cfg.EnableDeviceTracking {
-			deviceID := fc.Header("X-Device-ID")
-			if deviceID != "" {
-				go updateDeviceLastSeen(context.Background(), deviceID)
+			if deviceID := fc.Header("X-Device-ID"); deviceID != "" {
+				logDeviceErr("touch", deviceStore(cfg).Touch(c.Context(), deviceID, claims.UserID))
 			}
 		}
 
@@ -137,12 +142,7 @@ func MobileBFFLoginHandler(auth *usecases.AuthUseCase, cfg MobileBFFConfig) doma
 
 		// Register device (if tracking enabled)
 		if cfg.EnableDeviceTracking && req.Device.DeviceID != "" {
-			req.Device.UserID = "" // Will be set from token
-			req.Device.LastSeenAt = time.Now()
-			if req.Device.CreatedAt.IsZero() {
-				req.Device.CreatedAt = time.Now()
-			}
-			go saveDevice(context.Background(), &req.Device)
+			registerDevice(c.Context(), auth, cfg, req.Device, tokens.AccessToken)
 		}
 
 		// Response WITH tokens (app stores in Keychain/Keystore)
@@ -183,11 +183,7 @@ func MobileBFFRegisterHandler(auth *usecases.AuthUseCase, cfg MobileBFFConfig) d
 
 		// Register device (if tracking enabled)
 		if cfg.EnableDeviceTracking && req.Device.DeviceID != "" {
-			req.Device.LastSeenAt = time.Now()
-			if req.Device.CreatedAt.IsZero() {
-				req.Device.CreatedAt = time.Now()
-			}
-			go saveDevice(context.Background(), &req.Device)
+			registerDevice(c.Context(), auth, cfg, req.Device, tokens.AccessToken)
 		}
 
 		return fc.JSON(201, map[string]any{
@@ -225,7 +221,11 @@ func MobileBFFRefreshHandler(auth *usecases.AuthUseCase, cfg MobileBFFConfig) do
 
 		// Update device last seen (if tracking enabled)
 		if cfg.EnableDeviceTracking && req.DeviceID != "" {
-			go updateDeviceLastSeen(context.Background(), req.DeviceID)
+			userID := ""
+			if cl, err := auth.Claims(c.Context(), tokens.AccessToken); err == nil {
+				userID = cl.UserID
+			}
+			logDeviceErr("touch", deviceStore(cfg).Touch(c.Context(), req.DeviceID, userID))
 		}
 
 		return fc.JSON(200, map[string]any{
@@ -259,37 +259,21 @@ func MobileBFFLogoutHandler(auth *usecases.AuthUseCase, cfg MobileBFFConfig) dom
 
 		// Delete device (if tracking enabled)
 		if cfg.EnableDeviceTracking && req.DeviceID != "" {
-			go deleteDevice(context.Background(), req.DeviceID)
+			logDeviceErr("delete", deviceStore(cfg).Delete(c.Context(), req.DeviceID))
 		}
 
 		return fc.JSON(200, map[string]string{"message": "logged out"})
 	}
 }
 
-// === Helper Functions ===
-
-// updateDeviceLastSeen updates the last seen time for a device.
-func updateDeviceLastSeen(ctx context.Context, deviceID string) {
-	// In production, this would update the device in the database
-	// For now, it's a no-op placeholder
-	_ = ctx
-	_ = deviceID
-}
-
-// saveDevice saves a device record.
-func saveDevice(ctx context.Context, device *domain.DeviceInfo) {
-	// In production, this would save to the database
-	// For now, it's a no-op placeholder
-	_ = ctx
-	_ = device
-}
-
-// deleteDevice deletes a device record.
-func deleteDevice(ctx context.Context, deviceID string) {
-	// In production, this would delete from the database
-	// For now, it's a no-op placeholder
-	_ = ctx
-	_ = deviceID
+// registerDevice stores the device bound to the user of the issued token.
+func registerDevice(ctx context.Context, auth *usecases.AuthUseCase, cfg MobileBFFConfig, d domain.DeviceInfo, accessToken string) {
+	d.UserID = ""
+	if cl, err := auth.Claims(ctx, accessToken); err == nil {
+		d.UserID = cl.UserID
+	}
+	d.LastSeenAt = time.Now()
+	logDeviceErr("save", deviceStore(cfg).Save(ctx, d))
 }
 
 // === Route Registration Helpers ===
@@ -308,17 +292,8 @@ func RegisterMobileBFFRoutes(app *App, prefix string, auth *usecases.AuthUseCase
 
 	// Device management routes (if tracking enabled)
 	if cfg.EnableDeviceTracking {
-		// These would be implemented with actual device management logic
-		// protected.Post("/device", MobileRegisterDeviceHandler(cfg))
-		// protected.Delete("/device/:id", MobileRemoveDeviceHandler(cfg))
-		// protected.Get("/devices", MobileListDevicesHandler(cfg))
-	}
-
-	// Push notification routes (if enabled)
-	if cfg.EnablePushNotifications {
-		// These would be implemented with actual push notification logic
-		// protected.Post("/push/register", MobilePushRegisterHandler(cfg))
-		// protected.Post("/push/test", MobilePushTestHandler(cfg))
+		protected.Get("/devices", MobileListDevicesHandler(cfg))
+		protected.Delete("/devices/:id", MobileRemoveDeviceHandler(cfg))
 	}
 
 	// Example: proxy routes would be registered here

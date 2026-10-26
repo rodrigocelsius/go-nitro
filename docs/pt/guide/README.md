@@ -35,6 +35,7 @@ Validação (EN + PT): [English](../../guide/validation.md) · [Português](vali
 | [Authentication](authentication.md) | JWT, sessions, OAuth2 |
 | [BFF](bff.md) | Backend-for-frontend |
 | [Data layer](data-layer.md) | **Padrão BLinq**: Store, Gateway, Resource |
+| [Transações](transactions.md) | `InTx` ambiente, hooks atômicos no Resource, `AfterCommit`, retentativas |
 | [BLinq](blinq.md) | DSL tipada (`modelgen`), migrate, codegen — **padrão com Postgres** |
 
 ## Ops

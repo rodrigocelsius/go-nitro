@@ -79,8 +79,20 @@ type ResourceOpts struct {
 	AfterCreate func(ctx context.Context, entity any) error
 	AfterUpdate func(ctx context.Context, entity any) error
 	AfterDelete func(ctx context.Context, id any) error
+	// BeforeDelete runs after the access check and before repo.Delete; return
+	// an error to abort (e.g. "customer has open invoices").
+	BeforeDelete func(ctx context.Context, id any) error
 	// OnMutate is called after create/update/delete with action "create"|"update"|"delete".
 	OnMutate func(ctx context.Context, action string, entityOrID any) error
+	// AfterCommit runs once the write and its hooks are committed, outside the
+	// transaction (publish events, send e-mail). It cannot fail the request.
+	AfterCommit func(ctx context.Context, action string, entityOrID any)
+
+	// Tx, when set, runs each write (load, Before*/After* hooks, repository
+	// call, OnMutate) as one unit of work: any hook error rolls back the
+	// write. Hooks join the transaction through their ctx. pkg sets it when
+	// the repository is a domain.Transactor and the Resource has hooks.
+	Tx domain.Transactor
 
 	// OwnerCheck, when set, runs right after Get/Update/Delete load the
 	// entity by :id and before it is returned/mutated/removed. Return
@@ -401,30 +413,31 @@ func makeCreateHandler(meta ResourceMetadata, repo domain.ResourceRepository, op
 
 		applyResourceDefaults(entity, opts, true)
 
-		if opts.BeforeWrite != nil {
-			if err := opts.BeforeWrite(c.Context(), entity); err != nil {
-				return err
+		err := runResourceWrite(c.Context(), opts, func(ctx context.Context) error {
+			if opts.BeforeWrite != nil {
+				if err := opts.BeforeWrite(ctx, entity); err != nil {
+					return err
+				}
 			}
-		}
-		if opts.BeforeCreate != nil {
-			if err := opts.BeforeCreate(c.Context(), entity); err != nil {
-				return err
+			if opts.BeforeCreate != nil {
+				if err := opts.BeforeCreate(ctx, entity); err != nil {
+					return err
+				}
 			}
-		}
 
-		if err := repo.Create(c.Context(), entity); err != nil {
-			return mapRepoError(err, meta.TableName+": create failed")
-		}
+			if err := repo.Create(ctx, entity); err != nil {
+				return mapRepoError(err, meta.TableName+": create failed")
+			}
 
-		if opts.AfterCreate != nil {
-			if err := opts.AfterCreate(c.Context(), entity); err != nil {
-				return err
+			if opts.AfterCreate != nil {
+				if err := opts.AfterCreate(ctx, entity); err != nil {
+					return err
+				}
 			}
-		}
-		if opts.OnMutate != nil {
-			if err := opts.OnMutate(c.Context(), "create", entity); err != nil {
-				return err
-			}
+			return finishResourceWrite(ctx, opts, "create", entity)
+		})
+		if err != nil {
+			return err
 		}
 
 		return respondJSON(c, 201, entity)
@@ -441,81 +454,82 @@ func makeUpdateHandler(meta ResourceMetadata, repo domain.ResourceRepository, op
 		merge := opts.PatchMerge == nil || *opts.PatchMerge
 		var entity any
 
-		// When OwnerCheck or TenantScope is configured, always load the
-		// existing entity first — even in replace mode — so access can be
-		// verified before any mutation, closing the IDOR gap on PATCH/PUT :id.
-		var existing any
-		if merge || needsEntityLoadForAccess(opts) {
-			var err error
-			existing, err = repo.FindByID(c.Context(), id)
-			if err != nil {
+		err := runResourceWrite(c.Context(), opts, func(ctx context.Context) error {
+			// When OwnerCheck or TenantScope is configured, always load the
+			// existing entity first — even in replace mode — so access can be
+			// verified before any mutation, closing the IDOR gap on PATCH/PUT :id.
+			var existing any
+			if merge || needsEntityLoadForAccess(opts) {
+				var err error
+				existing, err = repo.FindByID(ctx, id)
+				if err != nil {
+					return mapRepoError(err, meta.TableName+": not found")
+				}
+				if existing == nil {
+					return domain.NewNotFound(meta.TableName + ": not found")
+				}
+				if !accessAllowed(c, existing, opts) {
+					return domain.NewNotFound(meta.TableName + ": not found")
+				}
+			}
+
+			if merge {
+				entity = cloneEntity(existing, meta.ModelType)
+				if err := bindPatchJSON(c, entity); err != nil {
+					return err
+				}
+				resetReadonlyFields(entity, existing)
+				resetSystemFields(entity, existing, opts, false)
+			} else {
+				entity = reflect.New(meta.ModelType).Interface()
+				if err := bindAndValidateJSON(c, entity); err != nil {
+					return err
+				}
+				resetReadonlyFields(entity, nil)
+				resetSystemFields(entity, existing, opts, false)
+			}
+
+			setEntityIDField(domain.FieldByName(reflect.ValueOf(entity).Elem(), "ID"), id)
+
+			// The tenant is owned by the server: re-stamp it on every update so a
+			// client can neither move the record to another tenant (merge/PATCH)
+			// nor orphan it by wiping the column (replace/PUT).
+			if opts.TenantScope != nil {
+				tid, col, ok := resolveTenantScope(c, opts)
+				if !ok {
+					return domain.NewUnauthorized("missing tenant")
+				}
+				if err := stampEntityTenant(entity, col, tid); err != nil {
+					return domain.NewInternal(fmt.Errorf("tenant stamp: %w", err))
+				}
+			}
+
+			applyResourceDefaults(entity, opts, false)
+
+			if opts.BeforeWrite != nil {
+				if err := opts.BeforeWrite(ctx, entity); err != nil {
+					return err
+				}
+			}
+			if opts.BeforeUpdate != nil {
+				if err := opts.BeforeUpdate(ctx, entity); err != nil {
+					return err
+				}
+			}
+
+			if err := persistUpdate(ctx, repo, existing, entity, merge); err != nil {
 				return mapRepoError(err, meta.TableName+": not found")
 			}
-			if existing == nil {
-				return domain.NewNotFound(meta.TableName + ": not found")
-			}
-			if !accessAllowed(c, existing, opts) {
-				return domain.NewNotFound(meta.TableName + ": not found")
-			}
-		}
 
-		if merge {
-			entity = cloneEntity(existing, meta.ModelType)
-			if err := bindPatchJSON(c, entity); err != nil {
-				return err
+			if opts.AfterUpdate != nil {
+				if err := opts.AfterUpdate(ctx, entity); err != nil {
+					return err
+				}
 			}
-			resetReadonlyFields(entity, existing)
-			resetSystemFields(entity, existing, opts, false)
-		} else {
-			entity = reflect.New(meta.ModelType).Interface()
-			if err := bindAndValidateJSON(c, entity); err != nil {
-				return err
-			}
-			resetReadonlyFields(entity, nil)
-			resetSystemFields(entity, existing, opts, false)
-		}
-
-		setEntityIDField(domain.FieldByName(reflect.ValueOf(entity).Elem(), "ID"), id)
-
-		// The tenant is owned by the server: re-stamp it on every update so a
-		// client can neither move the record to another tenant (merge/PATCH)
-		// nor orphan it by wiping the column (replace/PUT).
-		if opts.TenantScope != nil {
-			tid, col, ok := resolveTenantScope(c, opts)
-			if !ok {
-				return domain.NewUnauthorized("missing tenant")
-			}
-			if err := stampEntityTenant(entity, col, tid); err != nil {
-				return domain.NewInternal(fmt.Errorf("tenant stamp: %w", err))
-			}
-		}
-
-		applyResourceDefaults(entity, opts, false)
-
-		if opts.BeforeWrite != nil {
-			if err := opts.BeforeWrite(c.Context(), entity); err != nil {
-				return err
-			}
-		}
-		if opts.BeforeUpdate != nil {
-			if err := opts.BeforeUpdate(c.Context(), entity); err != nil {
-				return err
-			}
-		}
-
-		if err := persistUpdate(c.Context(), repo, existing, entity, merge); err != nil {
-			return mapRepoError(err, meta.TableName+": not found")
-		}
-
-		if opts.AfterUpdate != nil {
-			if err := opts.AfterUpdate(c.Context(), entity); err != nil {
-				return err
-			}
-		}
-		if opts.OnMutate != nil {
-			if err := opts.OnMutate(c.Context(), "update", entity); err != nil {
-				return err
-			}
+			return finishResourceWrite(ctx, opts, "update", entity)
+		})
+		if err != nil {
+			return err
 		}
 
 		return respondJSON(c, 200, entity)
@@ -529,29 +543,36 @@ func makeDeleteHandler(meta ResourceMetadata, repo domain.ResourceRepository, op
 			return domain.NewBadRequest("missing id parameter")
 		}
 
-		if needsEntityLoadForAccess(opts) {
-			existing, err := repo.FindByID(c.Context(), id)
-			if err != nil {
+		err := runResourceWrite(c.Context(), opts, func(ctx context.Context) error {
+			if needsEntityLoadForAccess(opts) {
+				existing, err := repo.FindByID(ctx, id)
+				if err != nil {
+					return mapRepoError(err, meta.TableName+": not found")
+				}
+				if existing == nil || !accessAllowed(c, existing, opts) {
+					return domain.NewNotFound(meta.TableName + ": not found")
+				}
+			}
+
+			if opts.BeforeDelete != nil {
+				if err := opts.BeforeDelete(ctx, id); err != nil {
+					return err
+				}
+			}
+
+			if err := repo.Delete(ctx, id); err != nil {
 				return mapRepoError(err, meta.TableName+": not found")
 			}
-			if existing == nil || !accessAllowed(c, existing, opts) {
-				return domain.NewNotFound(meta.TableName + ": not found")
-			}
-		}
 
-		if err := repo.Delete(c.Context(), id); err != nil {
-			return mapRepoError(err, meta.TableName+": not found")
-		}
-
-		if opts.AfterDelete != nil {
-			if err := opts.AfterDelete(c.Context(), id); err != nil {
-				return err
+			if opts.AfterDelete != nil {
+				if err := opts.AfterDelete(ctx, id); err != nil {
+					return err
+				}
 			}
-		}
-		if opts.OnMutate != nil {
-			if err := opts.OnMutate(c.Context(), "delete", id); err != nil {
-				return err
-			}
+			return finishResourceWrite(ctx, opts, "delete", id)
+		})
+		if err != nil {
+			return err
 		}
 
 		return domain.RespNoContent()
@@ -780,12 +801,40 @@ func bindAndValidateJSON(c *domain.Ctx, v any) error {
 	return domain.NewBadRequest("bind: adapter does not support Bind")
 }
 
+// runResourceWrite runs fn in opts.Tx when set (one unit of work), else directly.
+func runResourceWrite(ctx context.Context, opts ResourceOpts, fn func(ctx context.Context) error) error {
+	// The row about to change is always read from the repository, never from
+	// a cache (a shared JSON cache drops `json:"-"` fields).
+	ctx = domain.BypassCache(ctx)
+	if opts.Tx != nil {
+		return opts.Tx.InTx(ctx, fn)
+	}
+	return fn(ctx)
+}
+
+// finishResourceWrite runs OnMutate and schedules AfterCommit for action.
+func finishResourceWrite(ctx context.Context, opts ResourceOpts, action string, entityOrID any) error {
+	if opts.OnMutate != nil {
+		if err := opts.OnMutate(ctx, action, entityOrID); err != nil {
+			return err
+		}
+	}
+	if opts.AfterCommit != nil {
+		after := opts.AfterCommit
+		domain.AfterCommit(ctx, func(ctx context.Context) { after(ctx, action, entityOrID) })
+	}
+	return nil
+}
+
 func mapRepoError(err error, fallbackNotFound string) error {
 	if err == nil {
 		return nil
 	}
 	if _, ok := err.(domain.HTTPError); ok {
 		return err
+	}
+	if domain.IsRetryable(err) {
+		return domain.NewTxConflict(err)
 	}
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
 		if fallbackNotFound != "" {
@@ -809,12 +858,6 @@ func respondJSON(c *domain.Ctx, status int, v any) error {
 		return j.JSON(status, v)
 	}
 	return fmt.Errorf("respond: adapter does not support JSON response")
-}
-
-func normalizePath(prefix string) string {
-	prefix = strings.TrimPrefix(prefix, "/")
-	prefix = strings.TrimSuffix(prefix, "/")
-	return "/" + prefix
 }
 
 var irregularPlurals = map[string]string{

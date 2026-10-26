@@ -19,12 +19,8 @@ func TestNew_AppliesDefaults(t *testing.T) {
 	tc := NewTestClient(app)
 	resp := tc.Get(t, "/ok")
 	tc.AssertStatus(t, resp, 200)
-	if resp.Header.Peek("X-Content-Type-Options") == nil && resp.Header.Peek("X-Frame-Options") == nil {
-		// security headers may be set via fasthttp header API — check request id at least
-	}
-	if len(resp.Header.Peek("X-Request-Id")) == 0 && len(resp.Header.Peek("X-Request-ID")) == 0 {
-		// RequestID middleware uses one of these names — soft check
-		t.Log("note: request id header name may differ")
+	if len(resp.Header.Peek("X-Request-ID")) == 0 {
+		t.Fatal("Defaults must set X-Request-ID")
 	}
 }
 

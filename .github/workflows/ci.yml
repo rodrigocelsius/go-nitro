@@ -43,9 +43,7 @@ jobs:
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - name: vet
         working-directory: ${{ matrix.module }}
-        # stdmethods off: ports.Serializer/adapters/json expose MarshalJSON(v any)
-        # (non-standard signature by design; renaming would break the public API).
-        run: go vet -stdmethods=false ./...
+        run: go vet ./...
       - name: test (race)
         working-directory: ${{ matrix.module }}
         # cmd/nitrogen includes the CLI e2e (new → install → make:scaffold ×3 →
@@ -138,6 +136,31 @@ jobs:
       - name: stop databases
         if: always()
         run: docker compose -f data/adapter/sql/testdata/docker-compose.yml down -v
+
+  # Real brokers for the NATS / Kafka queue adapters and nitro.QueueFromEnv.
+  brokers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: pkg/go.mod
+      - name: start brokers
+        run: docker compose -f adapters/kafka/testdata/docker-compose.yml up -d --wait
+      - name: kafka adapter
+        working-directory: adapters/kafka
+        env:
+          KAFKA_TEST_BROKERS: localhost:9092
+        run: go test -race -count=1 ./...
+      - name: QueueFromEnv end to end
+        working-directory: pkg
+        env:
+          NITRO_QUEUE_E2E_NATS: nats://localhost:4222
+          NITRO_QUEUE_E2E_KAFKA: localhost:9092
+        run: go test -count=1 -run TestQueueFromEnv_BrokersE2E .
+      - name: stop brokers
+        if: always()
+        run: docker compose -f adapters/kafka/testdata/docker-compose.yml down -v
 
   # Short fuzz smoke on the request-facing parsers.
   fuzz-smoke:

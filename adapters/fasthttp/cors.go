@@ -18,7 +18,6 @@ var (
 	corsHeaderAllowMethods     = []byte("Access-Control-Allow-Methods")
 	corsHeaderAllowHeaders     = []byte("Access-Control-Allow-Headers")
 	corsHeaderAllowCredentials = []byte("Access-Control-Allow-Credentials")
-	corsHeaderExposeHeaders    = []byte("Access-Control-Expose-Headers")
 	corsHeaderMaxAge           = []byte("Access-Control-Max-Age")
 	corsHeaderRequestMethod    = []byte("Access-Control-Request-Method")
 	corsHeaderRequestHeaders   = []byte("Access-Control-Request-Headers")

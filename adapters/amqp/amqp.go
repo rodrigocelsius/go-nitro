@@ -4,6 +4,7 @@ package amqp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -237,24 +238,28 @@ func (c *Client) PublishWithOptions(ctx context.Context, routingKey string, payl
 	headers[headerAttempts] = int32(attempts)
 	headers[headerMsgID] = id
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.pubCh == nil {
-		return fmt.Errorf("amqp: closed")
-	}
-	// Publisher confirm: only report success after the broker acks the message,
-	// so a silent drop (connection loss before persist) surfaces as an error.
-	dc, err := c.pubCh.PublishWithDeferredConfirmWithContext(ctx, c.cfg.Exchange, routingKey, false, false, amqp.Publishing{
+	msg := amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		MessageId:    id,
 		Timestamp:    time.Now().UTC(),
 		Headers:      headers,
 		Body:         body,
-	})
+	}
+	dc, err := c.publish(ctx, routingKey, msg)
+	if err != nil && c.publisherDead() {
+		// Publish-only processes have no consumer supervisor to reconnect
+		// them: redial once here so a broker restart heals on the next send.
+		if rerr := c.reconnect(); rerr == nil {
+			dc, err = c.publish(ctx, routingKey, msg)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("amqp: publish: %w", err)
 	}
+	// Publisher confirm: only report success after the broker acks the message,
+	// so a silent drop (connection loss before persist) surfaces as an error.
+	// Waited outside c.mu so concurrent publishers pipeline their confirms.
 	if dc != nil {
 		ok, err := dc.WaitContext(ctx)
 		if err != nil {
@@ -264,11 +269,35 @@ func (c *Client) PublishWithOptions(ctx context.Context, routingKey string, payl
 			return fmt.Errorf("amqp: publish nacked by broker")
 		}
 	}
+	c.mu.Lock()
 	st := c.ensureStats(routingKey)
 	st.Pending++
 	st.Total++
+	c.mu.Unlock()
 	return nil
 }
+
+// publish sends msg on the publisher channel (confirm mode) under c.mu.
+func (c *Client) publish(ctx context.Context, routingKey string, msg amqp.Publishing) (*amqp.DeferredConfirmation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pubCh == nil {
+		return nil, errClosed
+	}
+	return c.pubCh.PublishWithDeferredConfirmWithContext(ctx, c.cfg.Exchange, routingKey, false, false, msg)
+}
+
+// publisherDead reports a lost connection/channel on a client not Closed.
+func (c *Client) publisherDead() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pubCh == nil {
+		return false // Close() was called: do not resurrect
+	}
+	return c.conn == nil || c.conn.IsClosed() || c.pubCh.IsClosed()
+}
+
+var errClosed = errors.New("amqp: closed")
 
 // Subscribe implements queue.Queue — binds queue to exchange with routing key = queue name.
 func (c *Client) Subscribe(queueName string, handler queue.Handler) error {

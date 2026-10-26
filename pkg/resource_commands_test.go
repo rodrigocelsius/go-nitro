@@ -3,6 +3,7 @@ package nitro_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
@@ -139,4 +140,53 @@ func jsonField(t *testing.T, body []byte, key string) string {
 		t.Fatalf("missing %q in %s", key, body)
 	}
 	return v
+}
+
+// Ported from the former order-business example: Roles apply only when the
+// When predicate holds on the loaded entity (high-value approval).
+func TestResourceCommands_RolesWhenPredicate(t *testing.T) {
+	repo := nitro.NewMemoryRepo[bizOrder]()
+	auth := nitro.NewAuth(nitro.AuthConfig{JWTSecret: "test-secret-at-least-32-characters-long"}).WithMemoryStore()
+	app := nitro.New(nitro.Config{DisableDefaults: true})
+	approve := func(ctx context.Context, id string) (*bizOrder, error) {
+		o, err := repo.FindByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		o.Status = "approved"
+		return o, repo.Update(ctx, o)
+	}
+	app.Resource("/orders", &bizOrder{}, nitro.AdaptRepo(repo), &nitro.ResourceConfig{
+		NoCache:    true,
+		Middleware: []nitro.Handler{nitro.JWTMiddleware(auth.Provider())},
+		Commands: nitro.Commands(
+			nitro.Cmd("approve", approve).Roles("manager").When(func(o *bizOrder) bool { return o.Total > 10_000 }),
+		),
+	})
+	ctx := context.Background()
+	low := &bizOrder{CustomerID: "c", Total: 500, Status: "pending"}
+	high := &bizOrder{CustomerID: "c", Total: 50_000, Status: "pending"}
+	_ = repo.Create(ctx, low)
+	_ = repo.Create(ctx, high)
+
+	token := func(roles ...string) string {
+		tok, err := auth.Provider().GenerateAccessToken(ctx, &nitro.User{ID: "u-" + strings.Join(roles, ""), Email: "u@x.co", Roles: roles})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	tc := nitro.NewTestClient(app)
+	user, manager := token(), token("manager")
+
+	tc.AssertStatus(t, tc.Bearer(user).Post(t, "/orders/"+low.ID.String()+"/approve", ""), 200)
+	if resp := tc.Bearer(user).Post(t, "/orders/"+high.ID.String()+"/approve", ""); resp.StatusCode() != 403 {
+		t.Fatalf("high value without manager role = %d, want 403", resp.StatusCode())
+	}
+	ok := tc.Bearer(manager).Post(t, "/orders/"+high.ID.String()+"/approve", "")
+	tc.AssertStatus(t, ok, 200)
+	tc.AssertBodyContains(t, ok, `"status":"approved"`)
+	if resp := tc.Post(t, "/orders/"+low.ID.String()+"/approve", ""); resp.StatusCode() != 401 {
+		t.Fatalf("anonymous = %d, want 401", resp.StatusCode())
+	}
 }

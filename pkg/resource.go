@@ -170,7 +170,8 @@ func splitResourceFirst(first any, args []any) (prefix string, modelArgs []any) 
 
 // applyResourceCacheDefaults fills Cache / CacheBustPattern / NoCache from the
 // App cache when ResourceConfig does not set those fields.
-// With an App cache configured, the in-memory L1 is disabled (NoCache) unless CacheTTL is set.
+// With an App cache configured, the in-memory L1 is replaced by a read-through
+// on the App cache (shared by all replicas) unless CacheTTL / NoCache is set.
 func (a *App) applyResourceCacheDefaults(prefix string, cfg *ResourceConfig) *ResourceConfig {
 	if a == nil || a.cache == nil {
 		return cfg
@@ -185,7 +186,9 @@ func (a *App) applyResourceCacheDefaults(prefix string, cfg *ResourceConfig) *Re
 		cfg.CacheBustPattern = resourceCacheBustPattern(prefix)
 	}
 	if !cfg.NoCache && cfg.CacheTTL == 0 {
+		// L1 off, reads go through the shared App cache instead.
 		cfg.NoCache = true
+		cfg.l2ReadThrough = strings.HasSuffix(cfg.CacheBustPattern, "*")
 	}
 	return cfg
 }
@@ -207,6 +210,11 @@ func resourceCacheBustPattern(prefix string) string {
 
 // ResourceDB creates a ResourceRepository from the model (e.g. *pgx.DB).
 type ResourceDB = domain.ResourceDB
+
+// AsResourceRepository is anything app.Resource accepts as its data source
+// without adapting: *sqladapter.Store[T], *nitro.MemoryRepository[T], … —
+// handlers take it instead of a concrete store type (no infra import).
+type AsResourceRepository = domain.AsResourceRepository
 
 // Resource registers typed CRUD routes without AdaptRepo.
 //
@@ -289,6 +297,19 @@ func (a *App) registerResource(prefix string, controller any, repo []domain.Reso
 
 		modelType := reflect.TypeOf(controller)
 		cached := applyResourceCache(repo[0], opts)
+		if resCfg != nil && resCfg.l2ReadThrough && resCfg.Cache != nil {
+			// Shared L2 (Redis) replaces the per-process L1: every replica
+			// reads the same entries and writes bust them (OnMutate).
+			mt := modelType
+			for mt != nil && mt.Kind() == reflect.Pointer {
+				mt = mt.Elem()
+			}
+			cached = newResourceL2Cache(repo[0], resCfg.Cache,
+				strings.TrimSuffix(resCfg.CacheBustPattern, "*"), DefaultCacheTTL, mt)
+		}
+		if resCfg.hasWriteHooks() {
+			opts.Tx = resourceTransactor(repo[0], resCfg)
+		}
 		routes = usecases.GenerateResourceRoutes(pfx, modelType, cached, opts)
 		routes = filterResourceRoutes(pfx, routes, resCfg)
 		for _, r := range routes {

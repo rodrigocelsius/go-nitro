@@ -35,8 +35,8 @@ Canonical copy: Nitro examples `db-blinq`, `blinq-hello`, `resource-dx`. Full CA
 Canonical snippet:
 
 ```go
-store := sqladapter.StoreOf[Product](db, "products")
-// in handler/routes.go Register:
+store := sqladapter.StoreFor[model.Product](db) // table by convention (products)
+// in handler/routes.go Register(app, store nitro.AsResourceRepository):
 app.Resource(&model.Product{}, store, &nitro.ResourceConfig{
     FilterRules: []nitro.FilterRule{{Param: "q", Field: "name", Op: "icontains"}},
 })
@@ -45,9 +45,10 @@ app.Resource(&model.Product{}, store, &nitro.ResourceConfig{
 | Do | Do not |
 |----|--------|
 | `sqladapter.OpenEnv` / `platform.Open` | raw pool without Gateway |
-| `sqladapter.StoreOf[T](db, "table")` | `gorm.Open` / sqlx / sqlc |
+| `sqladapter.StoreFor[T](db)` (`StoreOf[T](db, "table")` only off-convention) | `gorm.Open` / sqlx / sqlc |
 | `app.Resource` + `routes.go` | five CRUD handlers / fat `main` |
 | `modelgen` + `WhereIf` / FilterRules | `"SELECT … WHERE …"` in Go |
+| Write hooks / `Commands` (atomic by convention) + `nitro.InTx` / `nitro.AfterCommit` in use cases | `db.Begin` by hand / publishing to a queue before `COMMIT` |
 | `SetDefaultResourceMiddleware(JWT…)` | blanket `Public: true` to silence V-04 |
 | `BeforeWrite` + `computed:"true"` + `FillStringFrom` | client-writable denorm names |
 | `Commands` for enrich/publish | loose `app.Post("/:id/enrich")` |

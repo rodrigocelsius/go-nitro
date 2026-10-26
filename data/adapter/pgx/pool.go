@@ -12,6 +12,8 @@ import (
 // Pool wraps a pgxpool.Pool (PGX connection pool).
 type Pool struct {
 	pool *pgxpool.Pool
+	// pgbouncer is true when the pool talks to PgBouncer (transaction pooling).
+	pgbouncer bool
 }
 
 // PoolConfig optional settings (in addition to DSN).
@@ -19,6 +21,13 @@ type PoolConfig struct {
 	MaxConns   int32
 	MinConns   int32
 	SearchPath string // e.g. "transporte,public"
+
+	// PgBouncer configures the pool for PgBouncer in transaction/statement
+	// pooling mode: simple query protocol (no named prepared statements, which
+	// PgBouncer < 1.21 cannot route) and no session-level advisory lock for
+	// migrations. Also enabled by `pgbouncer=true` in the DSN or
+	// NITRO_DB_PGBOUNCER=1. An explicit default_query_exec_mode in the DSN wins.
+	PgBouncer bool
 
 	// OnNotice receives server NOTICEs. Nil means logNotice, not silence: without a
 	// handler pgconn drops them, and a migration that RAISEs a count of the rows it
@@ -33,15 +42,25 @@ func New(ctx context.Context, dsn string) (*Pool, error) {
 
 // NewWithConfig creates a Pool with optional Max/Min conns and search_path.
 func NewWithConfig(ctx context.Context, dsn string, pc PoolConfig) (*Pool, error) {
+	dsn, bouncerParam := stripPgBouncerParam(dsn)
+	bouncer := pc.PgBouncer || bouncerParam || envBool("NITRO_DB_PGBOUNCER")
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
+	if !bouncer && detectPgBouncerPort(cfg) {
+		log.Printf("pgx: port %d is PgBouncer's default — enabling PgBouncer mode (NITRO_DB_PGBOUNCER=0 to disable)", cfg.ConnConfig.Port)
+		bouncer = true
+	}
+	applyPoolEnv(cfg)
 	if pc.MaxConns > 0 {
 		cfg.MaxConns = pc.MaxConns
 	}
 	if pc.MinConns > 0 {
 		cfg.MinConns = pc.MinConns
+	}
+	if bouncer {
+		configurePgBouncer(cfg, dsn)
 	}
 	if pc.SearchPath != "" {
 		if cfg.ConnConfig.RuntimeParams == nil {
@@ -64,8 +83,11 @@ func NewWithConfig(ctx context.Context, dsn string, pc PoolConfig) (*Pool, error
 		return nil, err
 	}
 
-	return &Pool{pool: pool}, nil
+	return &Pool{pool: pool, pgbouncer: bouncer}, nil
 }
+
+// PgBouncer reports whether the pool is configured for PgBouncer.
+func (p *Pool) PgBouncer() bool { return p != nil && p.pgbouncer }
 
 // NewFromPool wraps an existing pgxpool.Pool.
 func NewFromPool(pool *pgxpool.Pool) *Pool {

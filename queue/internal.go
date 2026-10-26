@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -50,9 +51,27 @@ func (q *Internal) Publish(ctx context.Context, queue string, payload interface{
 // PublishWithOptions implements MetaPublisher.
 func (q *Internal) PublishWithOptions(ctx context.Context, queue string, payload interface{}, opts ...PublishOption) error {
 	po := ApplyPublishOptions(opts...)
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("queue: failed to marshal payload: %w", err)
+	}
+	maxRetry := q.config.RetryMax
+	if po.MaxRetry > 0 {
+		maxRetry = po.MaxRetry
+	}
+	now := time.Now()
+	msg := &Message{
+		ID:        uuid.New().String(),
+		Queue:     queue,
+		Payload:   payloadBytes,
+		State:     StatePending,
+		MaxRetry:  maxRetry,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  po.Metadata,
+	}
 
+	q.mu.Lock()
 	if _, exists := q.queues[queue]; !exists {
 		q.queues[queue] = make(chan *Message, q.config.QueueSize)
 		q.stats[queue] = &Stats{}
@@ -60,35 +79,47 @@ func (q *Internal) PublishWithOptions(ctx context.Context, queue string, payload
 			q.startWorkersForQueue(queue)
 		}
 	}
+	ch := q.queues[queue]
+	st := q.stats[queue]
+	st.Pending++
+	st.Total++
+	q.mu.Unlock()
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("queue: failed to marshal payload: %w", err)
-	}
-
-	maxRetry := q.config.RetryMax
-	if po.MaxRetry > 0 {
-		maxRetry = po.MaxRetry
-	}
-	msg := &Message{
-		ID:        uuid.New().String(),
-		Queue:     queue,
-		Payload:   payloadBytes,
-		State:     StatePending,
-		MaxRetry:  maxRetry,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Metadata:  po.Metadata,
-	}
-
+	// Fast path: room in the buffer.
 	select {
-	case q.queues[queue] <- msg:
-		q.stats[queue].Pending++
-		q.stats[queue].Total++
+	case ch <- msg:
 		return nil
 	default:
-		return fmt.Errorf("queue: queue %s is full", queue)
 	}
+
+	// Backpressure: wait for a worker to free a slot instead of failing
+	// under a burst — without holding q.mu, which workers need.
+	timeout := q.config.PublishTimeout
+	if timeout == 0 {
+		timeout = time.Second
+	}
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		select {
+		case ch <- msg:
+			return nil
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-timer.C:
+			err = ErrQueueFull
+		}
+	} else {
+		err = ErrQueueFull
+	}
+	q.mu.Lock()
+	st.Pending--
+	st.Total--
+	q.mu.Unlock()
+	if errors.Is(err, ErrQueueFull) {
+		return fmt.Errorf("%w: %s", ErrQueueFull, queue)
+	}
+	return err
 }
 
 // Subscribe registers a handler to process messages from a queue.
@@ -288,3 +319,6 @@ func invokeHandler(ctx context.Context, msg *Message, h Handler) (err error) {
 	}()
 	return h(ctx, msg)
 }
+
+// NewMessageID returns a unique message id (shared by the broker adapters).
+func NewMessageID() string { return uuid.New().String() }

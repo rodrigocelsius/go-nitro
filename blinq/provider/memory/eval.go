@@ -9,40 +9,6 @@ import (
 	"github.com/rodrigocelsius/go-nitro/blinq/v2/expr"
 )
 
-func evalPred(p expr.Predicate, row map[string]any) (bool, error) {
-	if p == nil {
-		return true, nil
-	}
-	switch n := p.(type) {
-	case expr.Binary:
-		return evalBinary(n, row)
-	case expr.And:
-		for _, it := range n.Items {
-			ok, err := evalPred(it, row)
-			if err != nil || !ok {
-				return ok, err
-			}
-		}
-		return true, nil
-	case expr.Or:
-		for _, it := range n.Items {
-			ok, err := evalPred(it, row)
-			if err != nil {
-				return false, err
-			}
-			if ok {
-				return true, nil
-			}
-		}
-		return false, nil
-	case expr.Not:
-		ok, err := evalPred(n.Inner, row)
-		return !ok, err
-	default:
-		return false, fmt.Errorf("blinq/memory: unknown predicate %T", p)
-	}
-}
-
 func evalBinary(b expr.Binary, row map[string]any) (bool, error) {
 	col := b.Field.Column
 	val, ok := row[col]

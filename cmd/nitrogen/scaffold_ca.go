@@ -307,6 +307,11 @@ func ensureUsecaseRepoInterface(name string, fields []fieldSpec) {
 	}
 	mod := modulePath()
 	path := filepath.Join(usecaseDir, "repository.go")
+	if _, err := os.Stat(path); err == nil && len(fields) == 0 {
+		// make:usecase / make:repository know no fields: keep the port the
+		// scaffold wrote (its Filter has Q/Active wired to handler + repo).
+		return
+	}
 	q := firstStringField(fields)
 	act := activeField(fields)
 	var filter strings.Builder
@@ -488,7 +493,7 @@ func Test%sStore_OpenTest(t *testing.T) {
 		t.Fatalf("OpenTestMigrate: %%v (need migrations/ — nitrogen migrate:make)", err)
 	}
 	defer db.Close()
-	store := sqladapter.StoreOf[model.%s](db, %q)
+	store := sqladapter.StoreFor[model.%s](db)
 	got, err := store.CreateOne(ctx, &model.%s{})
 	if err != nil {
 		t.Fatalf("CreateOne: %%v", err)
@@ -497,7 +502,7 @@ func Test%sStore_OpenTest(t *testing.T) {
 		t.Fatal("expected generated id")
 	}
 }
-`, mod, names.Type, names.Type, names.Table, names.Type)
+`, mod, names.Type, names.Type, names.Type)
 	if err := writeFile(path, body); err != nil {
 		fatalWrite(err)
 	}
@@ -523,21 +528,21 @@ func patchMainWithRepo(names resourceNames) {
 		}
 		src = string(b)
 	}
-	wire := fmt.Sprintf("\tstore := sqladapter.StoreOf[model.%s](db, %q)\n\trepo := repository.New%s(store)\n\n", names.Type, names.Table, names.Type)
+	wire := fmt.Sprintf("\tstore := sqladapter.StoreFor[model.%s](db)\n\trepo := repository.New%s(store)\n\n", names.Type, names.Type)
 	switch {
 	case strings.Contains(src, "\thandler.Register(app)"):
 		src = strings.Replace(src, "\thandler.Register(app)", wire+"\thandler.Register(app, repo)", 1)
 	case strings.Contains(src, "handler.Register(app, ") && !strings.Contains(src, "handler.Register"+names.Type+"("):
 		// An earlier scaffold owns handler.Register; this one was appended
 		// to routes.go as Register<Type>, so wire that call too.
-		call := fmt.Sprintf("\thandler.Register%s(app, repository.New%s(sqladapter.StoreOf[model.%s](db, %q)))\n", names.Type, names.Type, names.Type, names.Table)
+		call := fmt.Sprintf("\thandler.Register%s(app, repository.New%s(sqladapter.StoreFor[model.%s](db)))\n", names.Type, names.Type, names.Type)
 		var wired bool
 		if src, wired = insertBeforeListen(src, call); !wired {
 			fmt.Printf("nitrogen: tip — add %s in %s\n", strings.TrimSpace(call), path)
 			return
 		}
 	default:
-		fmt.Printf("nitrogen: tip — wire repository.New%s(sqladapter.StoreOf[model.%s](db, %q)) in %s\n", names.Type, names.Type, names.Table, path)
+		fmt.Printf("nitrogen: tip — wire repository.New%s(sqladapter.StoreFor[model.%s](db)) in %s\n", names.Type, names.Type, path)
 		return
 	}
 	src = ensureImport(src, "sqladapter", "github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2")

@@ -112,6 +112,16 @@ func StandaloneCSRFMiddleware(cfg ...CSRFConfig) Handler {
 // MobileBFFConfig configures the BFF for mobile applications.
 type MobileBFFConfig = nitroadapter.MobileBFFConfig
 
+// DeviceStore persists mobile devices (EnableDeviceTracking). Plug a database
+// implementation for several replicas; the default is in-memory.
+type DeviceStore = nitroadapter.DeviceStore
+
+// NewMemoryDeviceStore creates an in-memory DeviceStore keeping at most
+// maxPerUser devices per user (least recently seen evicted; 0 = unlimited).
+func NewMemoryDeviceStore(maxPerUser int) *nitroadapter.MemoryDeviceStore {
+	return nitroadapter.NewMemoryDeviceStore(maxPerUser)
+}
+
 // === Mobile BFF Handlers ===
 
 // MobileBFFMiddleware returns BFF middleware for mobile.
@@ -194,6 +204,7 @@ func NewMobileBFFConfig(services ...ServiceConfig) MobileBFFConfig {
 		RefreshTokenTTL:      30 * 24 * time.Hour,
 		EnableDeviceTracking: true,
 		MaxDevicesPerUser:    5,
+		Devices:              nitroadapter.NewMemoryDeviceStore(5),
 		CompactResponse:      true,
 	}
 	return cfg

@@ -243,6 +243,8 @@ func appendNitroReplace(goModPath, nitroPath string) error {
 		"queue",
 		"resilience",
 		"adapters/amqp",
+		"adapters/nats",
+		"adapters/kafka",
 		"adapters/fasthttp",
 		"adapters/cache",
 		"adapters/otel",

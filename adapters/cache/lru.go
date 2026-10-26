@@ -82,6 +82,9 @@ func (c *LRUCache) Get(key string, dest any) error {
 
 // Set stores a value in the cache.
 func (c *LRUCache) Set(key string, value any, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = defaultMemoryTTL
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err

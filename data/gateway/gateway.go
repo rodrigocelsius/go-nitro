@@ -18,6 +18,10 @@ type Gateway struct {
 	cache    domain.Cache
 	cacheTTL time.Duration
 	slow     time.Duration
+
+	// root is set on gateways pinned to a transaction (Pin): the database
+	// whose ambient transactions this gateway joins.
+	root *Gateway
 }
 
 // Config configures the Gateway.

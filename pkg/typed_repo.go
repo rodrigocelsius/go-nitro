@@ -69,6 +69,12 @@ func (a *typedRepoAdapter[T]) Delete(ctx context.Context, id any) error {
 	return a.inner.Delete(ctx, id)
 }
 
+// InTx forwards domain.Transactor when the inner repository supports it
+// (BLinq StoreRepo); otherwise fn runs directly.
+func (a *typedRepoAdapter[T]) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return domain.RunInTx(ctx, a.inner, fn)
+}
+
 func (a *typedQueryableRepoAdapter[T]) ListQuery(ctx context.Context, q domain.ListQuery) (*ResourceListResult, error) {
 	return a.inner.(typedListQueryable[T]).ListQuery(ctx, q)
 }

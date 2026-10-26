@@ -1,4 +1,4 @@
-.PHONY: test test-pkg test-cli test-blinq test-http test-data test-sql-integration openapi-smoke test-sql-tx test-examples
+.PHONY: test-brokers test test-pkg test-cli test-blinq test-http test-data test-sql-integration openapi-smoke test-sql-tx test-examples
 
 # Nested modules: `go test ./...` from the repo root does not work.
 # Default `test` matches CI (pkg, CLI, blinq, fasthttp).
@@ -62,3 +62,10 @@ test-sql-integration:
 	  i=$$((i+1)); [ $$i -gt 90 ] && exit 1; sleep 3; \
 	done
 	cd data/adapter/sql && NITRO_SQL_INTEGRATION=1 NITRO_DB_QUIET=1 go test -tags=integration -count=1 -timeout 5m ./...
+
+# Kafka + NATS integration (Docker): adapters/kafka and nitro.QueueFromEnv.
+test-brokers:
+	docker compose -f adapters/kafka/testdata/docker-compose.yml up -d --wait
+	cd adapters/kafka && KAFKA_TEST_BROKERS=localhost:9092 go test -count=1 ./...
+	cd adapters/nats && go test -count=1 ./...
+	cd pkg && NITRO_QUEUE_E2E_NATS=nats://localhost:4222 NITRO_QUEUE_E2E_KAFKA=localhost:9092 go test -count=1 -run TestQueueFromEnv_BrokersE2E .

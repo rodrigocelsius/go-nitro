@@ -33,9 +33,11 @@ func writeRabbitPlatform() error {
 
 import nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
 
-// Queue opens RabbitMQ from RABBITMQ_URL / RABBITMQ_EXCHANGE / RABBITMQ_PREFETCH.
-func Queue() (*nitro.RabbitQueue, error) {
-	return nitro.NewRabbitQueueFromEnv()
+// Queue is the broker selected by the environment — RabbitMQ (RABBITMQ_URL),
+// NATS JetStream (NATS_URL) or Kafka (KAFKA_BROKERS) — with an in-memory
+// fallback while it is unreachable; in-memory only when none is set.
+func Queue() *nitro.FallbackQueue {
+	return nitro.QueueFromEnv()
 }
 `
 	return writeFile(filepath.Join(dir, "queue.go"), body)

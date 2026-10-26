@@ -3,6 +3,7 @@ package nitro
 import (
 	"context"
 	"fmt"
+	"reflect"
 )
 
 // getter is the minimal Store surface needed by FillStringFrom.
@@ -39,6 +40,11 @@ func FillStringFrom[T any](
 }
 
 func isEmptyLookupID(id any) bool {
+	// A nil pointer (e.g. an optional FK `*nitro.UUID`) is empty; checked
+	// first because calling String() through it would panic.
+	if rv := reflect.ValueOf(id); rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return true
+	}
 	switch v := id.(type) {
 	case string:
 		return v == ""

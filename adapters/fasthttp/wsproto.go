@@ -42,9 +42,8 @@ type wsConn struct {
 	br   *bufio.Reader
 	mu   sync.Mutex
 
-	readDeadline time.Time
-	pongHandler  func(string) error
-	closed       bool
+	pongHandler func(string) error
+	closed      bool
 
 	// maxMessage caps a single frame payload (0 = DefaultWSMaxMessageSize).
 	maxMessage int64

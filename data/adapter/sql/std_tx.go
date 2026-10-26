@@ -40,3 +40,9 @@ func (e *stdTxExec) Exec(ctx context.Context, query string, args []any) (gateway
 	}
 	return stdResult{res: res}, nil
 }
+
+// Commit commits the transaction (gateway.TxExecutor).
+func (e *stdTxExec) Commit(context.Context) error { return e.tx.Commit() }
+
+// Rollback rolls back the transaction (gateway.TxExecutor).
+func (e *stdTxExec) Rollback(context.Context) error { return e.tx.Rollback() }

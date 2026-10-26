@@ -72,7 +72,10 @@ func (al *AsyncLogger) processLoop() {
 				return
 			}
 			batch := []logEntry{entry}
-			// Collect a full batch
+			// Collect up to a full batch of what is already queued; stop as
+			// soon as the channel is empty (a bare break would only leave the
+			// select and spin through the remaining iterations).
+		collect:
 			for i := 1; i < al.batchSize; i++ {
 				select {
 				case e, ok := <-al.ch:
@@ -83,7 +86,7 @@ func (al *AsyncLogger) processLoop() {
 					}
 					batch = append(batch, e)
 				default:
-					break
+					break collect
 				}
 			}
 			al.writeBatch(batch)

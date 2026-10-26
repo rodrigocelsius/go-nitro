@@ -172,8 +172,3 @@ var ErrNotFound = &NotFoundError{Message: "not found"}
 type ErrCacheMiss struct{}
 
 func (ErrCacheMiss) Error() string { return "nitro: cache miss" }
-
-// ErrEmptyQueue is returned when the queue is empty.
-type ErrEmptyQueue struct{}
-
-func (ErrEmptyQueue) Error() string { return "nitro: queue is empty" }

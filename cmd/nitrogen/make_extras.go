@@ -42,11 +42,11 @@ import (
 
 // Seed%s inserts a sample row (run via: nitrogen seed).
 func Seed%s(ctx context.Context, db *sqladapter.DB) error {
-	store := sqladapter.StoreOf[model.%s](db, %q)
+	store := sqladapter.StoreFor[model.%s](db)
 	_, err := store.CreateOne(ctx, &model.%s{})
 	return err
 }
-`, pkg, mod, names.Type, names.Type, names.Type, names.Table, names.Type)
+`, pkg, mod, names.Type, names.Type, names.Type, names.Type)
 	} else if hasInternalLayout() && mod != "" && dirExists(filepath.Join("internal", "usecase", names.Package)) {
 		uc := names.Package
 		body = fmt.Sprintf(`package %s
@@ -247,7 +247,7 @@ func Test%sStore_OpenTest(t *testing.T) {
 		t.Fatalf("OpenTestMigrate: %%v (run migrate:make first)", err)
 	}
 	defer db.Close()
-	store := sqladapter.StoreOf[model.%s](db, %q)
+	store := sqladapter.StoreFor[model.%s](db)
 	got, err := store.CreateOne(ctx, &model.%s{})
 	if err != nil {
 		t.Fatalf("CreateOne: %%v", err)
@@ -256,7 +256,7 @@ func Test%sStore_OpenTest(t *testing.T) {
 		t.Fatal("expected generated id")
 	}
 }
-`, pkg, mod, mod, names.Type, names.Type, names.Type, names.Table, names.Type)
+`, pkg, mod, mod, names.Type, names.Type, names.Type, names.Type)
 	}
 	return fmt.Sprintf(`package %s
 
@@ -447,16 +447,16 @@ func doctorBLinqCompliance() {
 		return
 	}
 	hasModelgen := dirExists("internal/modelgen") || dirExists("modelgen")
-	hasStoreOf := projectContains("StoreOf[") || projectContains("sqladapter.StoreOf")
+	hasStoreOf := projectContains("StoreOf[") || projectContains("StoreFor[")
 	if hasModelgen {
 		fmt.Println("  ✓ modelgen package present")
 	} else {
 		fmt.Println("  · modelgen missing — nitrogen make <model>.go --data")
 	}
 	if hasStoreOf {
-		fmt.Println("  ✓ StoreOf usage found")
+		fmt.Println("  ✓ BLinq store usage found")
 	} else if !optOut && len(alt) == 0 {
-		fmt.Println("  · StoreOf not found — prefer sqladapter.StoreOf[T](db, \"table\")")
+		fmt.Println("  · BLinq store not found — prefer sqladapter.StoreFor[T](db)")
 	}
 }
 

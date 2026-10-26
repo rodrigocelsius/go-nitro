@@ -31,6 +31,15 @@ func NewAuthUseCase(deps AuthDeps) *AuthUseCase {
 	return &AuthUseCase{deps: deps}
 }
 
+// Claims validates an access token issued by this use case and returns its
+// claims (e.g. to attach the user to a device right after Login).
+func (a *AuthUseCase) Claims(ctx context.Context, accessToken string) (*domain.Claims, error) {
+	if a.deps.TokenProvider == nil {
+		return nil, domain.NewUnauthorized("no token provider")
+	}
+	return a.deps.TokenProvider.ValidateToken(ctx, accessToken)
+}
+
 // dummyPasswordHash is a valid bcrypt hash of an arbitrary fixed string,
 // used only to burn roughly the same CPU time as a real Verify call when
 // no user was found — see the timing-attack note in Login below. Never

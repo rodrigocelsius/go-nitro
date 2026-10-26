@@ -239,10 +239,6 @@ func ResolveType(expr goast.Expr) (kind FieldKind, typeName string, elemKind Fie
 	return resolveTypeCtx(expr, nil)
 }
 
-func resolveType(expr goast.Expr) (kind FieldKind, typeName string, elemKind FieldKind, elemTypeName string) {
-	return resolveTypeCtx(expr, nil)
-}
-
 func resolveTypeCtx(expr goast.Expr, tc *typeCtx) (kind FieldKind, typeName string, elemKind FieldKind, elemTypeName string) {
 	switch t := expr.(type) {
 	case *goast.Ident:

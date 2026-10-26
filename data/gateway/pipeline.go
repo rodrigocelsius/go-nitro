@@ -18,7 +18,10 @@ func (g *Gateway) Query(ctx context.Context, sql string, args []any) ([]map[stri
 	start := time.Now()
 
 	var table string
-	if g.cache != nil {
+	// Inside a transaction the cache is bypassed: reads must see the tx's own
+	// uncommitted writes and must not publish them to other requests.
+	useCache := g.cache != nil && !g.inTx(ctx)
+	if useCache {
 		table = selectCacheTable(sql)
 		if table != "" {
 			key := selectKeyPrefix + table + ":" + queryHash(sql, args)
@@ -37,7 +40,7 @@ func (g *Gateway) Query(ctx context.Context, sql string, args []any) ([]map[stri
 		defer span.End()
 	}
 
-	rows, err := g.executor.Query(ctx, sql, args)
+	rows, err := g.exec(ctx).Query(ctx, sql, args)
 	duration := time.Since(start)
 	if err != nil {
 		g.recordError(span, "select", duration, err)
@@ -70,7 +73,7 @@ func (g *Gateway) Query(ctx context.Context, sql string, args []any) ([]map[stri
 	g.recordMetrics("select", duration, len(results), false)
 	g.logQuery("select", duration, len(results), false, len(args))
 
-	if g.cache != nil && table != "" {
+	if useCache && table != "" {
 		_ = g.cache.Set(selectKeyPrefix+table+":"+queryHash(sql, args), results, g.selectTTL())
 	}
 
@@ -89,7 +92,7 @@ func (g *Gateway) QueryCursor(ctx context.Context, sql string, args []any) (Rows
 		span.SetAttribute("db.args_count", len(args))
 		defer span.End()
 	}
-	return g.executor.Query(ctx, sql, args)
+	return g.exec(ctx).Query(ctx, sql, args)
 }
 
 // Exec runs INSERT/UPDATE/DELETE and returns rows affected.
@@ -103,7 +106,7 @@ func (g *Gateway) Exec(ctx context.Context, operation, sql string, args []any) (
 		defer span.End()
 	}
 
-	tag, err := g.executor.Exec(ctx, sql, args)
+	tag, err := g.exec(ctx).Exec(ctx, sql, args)
 	duration := time.Since(start)
 	if err != nil {
 		g.recordError(span, operation, duration, err)
@@ -116,6 +119,11 @@ func (g *Gateway) Exec(ctx context.Context, operation, sql string, args []any) (
 
 	if g.cache != nil && (operation == "insert" || operation == "update" || operation == "delete") {
 		g.invalidateBySQL(sql)
+		if g.inTx(ctx) {
+			// Re-invalidate once committed: a concurrent read between this
+			// write and COMMIT may have re-cached the pre-transaction rows.
+			domain.AfterCommit(ctx, func(context.Context) { g.invalidateBySQL(sql) })
+		}
 	}
 
 	return n, nil
@@ -130,7 +138,7 @@ func (g *Gateway) QueryRow(ctx context.Context, sql string, args []any) Row {
 		sql:   sql,
 		args:  args,
 		start: time.Now(),
-		row:   g.executor.QueryRow(ctx, sql, args),
+		row:   g.exec(ctx).QueryRow(ctx, sql, args),
 	}
 }
 

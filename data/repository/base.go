@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/rodrigocelsius/go-nitro/blinq/v2/expr"
-	"github.com/rodrigocelsius/go-nitro/blinq/v2/field"
 	"github.com/rodrigocelsius/go-nitro/blinq/v2/query"
 	"github.com/rodrigocelsius/go-nitro/blinq/v2/scan"
 	pgxadapter "github.com/rodrigocelsius/go-nitro/data/adapter/pgx/v2"
@@ -36,10 +35,6 @@ func NewBaseRepository[T any](gw *gateway.Gateway, table, idCol string) *BaseRep
 
 // Store exposes the underlying Store[T] (advanced BLinq queries).
 func (r *BaseRepository[T]) Store() *pgxadapter.Store[T] { return r.store }
-
-func (r *BaseRepository[T]) entity() field.Entity {
-	return field.Entity{Name: r.table}
-}
 
 // FindByID finds a record by ID.
 func (r *BaseRepository[T]) FindByID(ctx context.Context, id any) (*T, error) {

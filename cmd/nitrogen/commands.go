@@ -5,11 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
-
-var validProjectName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`) // kept for legacy tests; prefer validateProjectName
 
 func cmdNew(args []string) {
 	if len(args) < 1 {

@@ -28,6 +28,7 @@ Human docs for Nitro v1. For agents: [PLAYBOOK (EN)](../ai/PLAYBOOK.en.md) · [P
 | [Recipes](recipes.md) | Pagination, upload, SSE, WS, Resource |
 | [Business Resource](business-resource.md) | Commands, Queries, Rules on `ResourceConfig` (v2) |
 | [Resource hooks](resource-hooks.md) | `AfterCreate`, `BeforeUpdate`, … |
+| [Transactions](transactions.md) | Ambient `InTx`, atomic Resource hooks, `AfterCommit`, retries |
 
 ## Domain
 

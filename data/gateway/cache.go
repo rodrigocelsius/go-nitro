@@ -55,8 +55,13 @@ func writeTables(sql string) []string {
 		return nil
 	}
 	idx := strings.Index(upper, kw)
-	if idx < 0 && kw == "MERGE " {
-		// "MERGE INTO t": also accept without trailing space handling below.
+	if idx < 0 {
+		// Irregular spacing ("INSERT\n  INTO t"): normalize and retry once,
+		// otherwise idx+len(kw) would point into the wrong token.
+		if norm := strings.Join(strings.Fields(trimmed), " "); norm != trimmed {
+			return writeTables(norm)
+		}
+		return nil
 	}
 	p := idx + len(kw)
 	if p > len(trimmed) {

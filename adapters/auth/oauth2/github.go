@@ -64,7 +64,7 @@ func githubUserFunc(userInfoURL string) UserFunc {
 		// endpoint and track the `verified` flag of whichever entry we pick.
 		verified := info.Email != ""
 		if info.Email == "" {
-			emails, err := fetchGitHubEmails(ctx, token.AccessToken)
+			emails, err := fetchGitHubEmails(ctx, userInfoURL+"/emails", token.AccessToken)
 			if err == nil {
 				for _, e := range emails {
 					if e.Primary {
@@ -95,9 +95,11 @@ func githubUserFunc(userInfoURL string) UserFunc {
 	}
 }
 
-func fetchGitHubEmails(ctx context.Context, accessToken string) ([]githubEmail, error) {
+// fetchGitHubEmails reads {UserInfoURL}/emails, so GitHub Enterprise
+// (https://ghe.example/api/v3/user) works like github.com.
+func fetchGitHubEmails(ctx context.Context, url, accessToken string) ([]githubEmail, error) {
 	var emails []githubEmail
-	if err := fetchJSON(ctx, "https://api.github.com/user/emails", accessToken, &emails); err != nil {
+	if err := fetchJSON(ctx, url, accessToken, &emails); err != nil {
 		return nil, err
 	}
 	return emails, nil

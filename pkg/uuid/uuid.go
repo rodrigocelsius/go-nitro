@@ -74,22 +74,6 @@ func New() UUID {
 	return u
 }
 
-// randUint64 returns a cryptographically random value masked to fit within
-// `mask` bits (mask must be a power-of-two-minus-one, e.g. 0x3fffffffffffffff
-// for 62 bits). Falls back to zero only if the OS entropy source is
-// unavailable, which never happens in practice on supported platforms.
-func randUint64(mask uint64) uint64 {
-	var b [8]byte
-	_, _ = rand.Read(b[:])
-	return binary.BigEndian.Uint64(b[:]) & mask
-}
-
-func randUint16(mask uint16) uint16 {
-	var b [2]byte
-	_, _ = rand.Read(b[:])
-	return binary.BigEndian.Uint16(b[:]) & mask
-}
-
 func (u UUID) String() string {
 	var b [36]byte // stack buffer: one allocation (the string), no pool round-trip
 	encodeHex(b[:], u)

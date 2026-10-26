@@ -96,16 +96,29 @@ func Pending(repo Repository) func(ctx context.Context, page nitro.Page) ([]mode
 
 ## Multi-table writes
 
-Commands do not auto-save across tables. Inside the usecase:
+With a BLinq repository every Command runs in **one transaction** by
+convention (`ResourceConfig.NoTx` opts out): every Store call made with the
+Command's `ctx` joins it, and an error rolls all of them back. The response is
+written only after `COMMIT`.
 
 ```go
-err := db.Tx(ctx, func(tx *sqladapter.DB) error {
-    orders := sqladapter.StoreOf[model.Order](tx, "orders")
-    invoices := sqladapter.StoreOf[model.Invoice](tx, "invoices")
-    // ...
-    return nil
-})
+func Place(orders *sqladapter.Store[model.Order], invoices *sqladapter.Store[model.Invoice]) func(ctx context.Context, in PlaceInput) (*model.Order, error) {
+    return func(ctx context.Context, in PlaceInput) (*model.Order, error) {
+        o, err := orders.CreateOne(ctx, &model.Order{CustomerID: in.CustomerID, Total: in.Total})
+        if err != nil {
+            return nil, err
+        }
+        if _, err := invoices.CreateOne(ctx, &model.Invoice{OrderID: o.ID, Amount: o.Total}); err != nil {
+            return nil, err // order insert rolled back too
+        }
+        nitro.AfterCommit(ctx, func(ctx context.Context) { notify(o) }) // side effect after COMMIT
+        return o, nil
+    }
+}
 ```
+
+Outside a Resource (use cases, jobs) use `db.InTx(ctx, fn)` / `nitro.InTx(ctx, db, fn)`.
+Details: [transactions.md](transactions.md).
 
 ## Header + line items (`sqladapter.Related`)
 

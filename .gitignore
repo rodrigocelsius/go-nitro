@@ -82,3 +82,4 @@ secrets.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+examples/v2/*/data/

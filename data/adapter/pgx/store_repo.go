@@ -144,7 +144,7 @@ func (r *StoreRepo[T]) Create(ctx context.Context, entity *T) error {
 	if err != nil {
 		return err
 	}
-	*entity = *created
+	mergeDBColumns(entity, created)
 	return nil
 }
 
@@ -161,7 +161,7 @@ func (r *StoreRepo[T]) Update(ctx context.Context, entity *T) error {
 	if err != nil {
 		return err
 	}
-	*entity = *updated
+	mergeDBColumns(entity, updated)
 	return nil
 }
 
@@ -180,7 +180,7 @@ func (r *StoreRepo[T]) UpdateFields(ctx context.Context, entity *T, fields []str
 	if err != nil {
 		return err
 	}
-	*entity = *updated
+	mergeDBColumns(entity, updated)
 	return nil
 }
 
@@ -267,6 +267,50 @@ func dbTag(f reflect.StructField) string {
 		db = db[:j]
 	}
 	return db
+}
+
+// mergeDBColumns copies the column-backed fields of the row the database
+// returned (RETURNING / reload) into entity, keeping fields that are not
+// columns (`db:"-"`, e.g. a nested Items slice from the request body) so
+// After* hooks and the HTTP response still see them.
+func mergeDBColumns(entity, row any) {
+	dv := reflect.ValueOf(entity)
+	sv := reflect.ValueOf(row)
+	if dv.Kind() != reflect.Pointer || sv.Kind() != reflect.Pointer || dv.IsNil() || sv.IsNil() {
+		return
+	}
+	mergeDBColumnsValue(dv.Elem(), sv.Elem())
+}
+
+func mergeDBColumnsValue(dst, src reflect.Value) {
+	t := dst.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" && !f.Anonymous {
+			continue
+		}
+		df, sf := dst.Field(i), src.Field(i)
+		if f.Anonymous {
+			ft := f.Type
+			if ft.Kind() == reflect.Pointer {
+				if sf.IsNil() {
+					continue
+				}
+				if df.IsNil() {
+					df.Set(reflect.New(ft.Elem()))
+				}
+				df, sf, ft = df.Elem(), sf.Elem(), ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				mergeDBColumnsValue(df, sf)
+			}
+			continue
+		}
+		if dbTag(f) == "" || !df.CanSet() {
+			continue
+		}
+		df.Set(sf)
+	}
 }
 
 // walkDBFieldsType walks exported fields, including anonymous embeds.

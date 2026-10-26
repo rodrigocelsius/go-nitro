@@ -18,7 +18,15 @@ type MemoryCache struct {
 	mu    sync.RWMutex
 	items map[string]cacheItem
 	max   int
+	sets  int // Set calls since the last expired-entry sweep
 }
+
+// sweepEvery bounds memory when maxSize is 0 (unbounded): expired entries
+// that are never read again are purged every sweepEvery writes.
+const sweepEvery = 1024
+
+// defaultMemoryTTL applies when Set receives ttl <= 0 (matches RedisCache).
+const defaultMemoryTTL = 5 * time.Minute
 
 // NewMemoryCache creates a new MemoryCache.
 func NewMemoryCache(maxSize int) *MemoryCache {
@@ -34,8 +42,15 @@ func (c *MemoryCache) Get(key string, dest any) error {
 	item, ok := c.items[key]
 	c.mu.RUnlock()
 
-	if !ok || time.Now().After(item.ExpiresAt) {
-		c.Delete(key)
+	if !ok {
+		return domain.ErrCacheMiss{}
+	}
+	if time.Now().After(item.ExpiresAt) {
+		c.mu.Lock()
+		if cur, still := c.items[key]; still && time.Now().After(cur.ExpiresAt) {
+			delete(c.items, key)
+		}
+		c.mu.Unlock()
 		return domain.ErrCacheMiss{}
 	}
 
@@ -44,6 +59,9 @@ func (c *MemoryCache) Get(key string, dest any) error {
 
 // Set stores a value in the cache.
 func (c *MemoryCache) Set(key string, value any, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = defaultMemoryTTL // same contract as RedisCache: 0 = default TTL
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -52,7 +70,11 @@ func (c *MemoryCache) Set(key string, value any, ttl time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.max > 0 && len(c.items) >= c.max {
+	c.sets++
+	if c.sets >= sweepEvery || (c.max > 0 && len(c.items) >= c.max) {
+		c.sweepExpired()
+	}
+	if _, exists := c.items[key]; !exists && c.max > 0 && len(c.items) >= c.max {
 		c.evictOldest()
 	}
 
@@ -90,6 +112,17 @@ func (c *MemoryCache) Clear() error {
 	c.items = make(map[string]cacheItem)
 	c.mu.Unlock()
 	return nil
+}
+
+// sweepExpired drops expired entries (caller holds c.mu).
+func (c *MemoryCache) sweepExpired() {
+	c.sets = 0
+	now := time.Now()
+	for k, it := range c.items {
+		if now.After(it.ExpiresAt) {
+			delete(c.items, k)
+		}
+	}
 }
 
 func (c *MemoryCache) evictOldest() {

@@ -47,3 +47,12 @@ func (r *rowsAdapter) Values() ([]any, error) { return r.rows.Values() }
 func (r *rowsAdapter) Columns() []string      { return r.cols }
 func (r *rowsAdapter) Err() error             { return r.rows.Err() }
 func (r *rowsAdapter) Close()                 { r.rows.Close() }
+
+// BeginTx opens a pool transaction (gateway.TxBeginner → Gateway.InTx).
+func (a *sqlAdapter) BeginTx(ctx context.Context) (gateway.TxExecutor, error) {
+	tx, err := a.exec.pool.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &txSQLAdapter{tx: tx}, nil
+}

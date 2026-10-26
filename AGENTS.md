@@ -130,6 +130,8 @@ Canonical layout: [`examples/v1/cleanarch`](examples/v1/cleanarch/) (memory) · 
 22. **Listen:** banner + `Listening on http://…` and shutdown logs are **automatic** — do not duplicate `log.Printf("listening…")` in `main`.
 23. **Stack choice:** if a prompt names GORM/sqlx/sqlc/raw SQL, honor it and mention the BLinq default once; for generic asks, use BLinq.
 24. **Model tags are optional:** `json`/`db` tags may be omitted — both default independently to snake_case of the Go field name (`CustomerName` → `customer_name`); explicit tags still win. Old style (`json:"x" db:"x"` on every field) keeps working with zero behavior change. Guide: [`docs/guide/models.md`](docs/guide/models.md).
+25. **Transactions are ambient (ctx):** multi-table writes go in Resource write hooks (`BeforeWrite`/`Before*`/`After*`/`BeforeDelete` — atomic by convention with BLinq, a hook error rolls back) or `Commands`; outside a Resource use `db.InTx(ctx, fn)` / `nitro.InTx`. Every Store called with that `ctx` joins. Side effects (queue, e-mail) only in `nitro.AfterCommit` / `ResourceConfig.AfterCommit`. Never `BEGIN` by hand. Guide: [`docs/guide/transactions.md`](docs/guide/transactions.md).
+26. **Queue:** `nitro.QueueFromEnv()` (RabbitMQ / NATS JetStream / Kafka from `RABBITMQ_URL` / `NATS_URL` / `KAFKA_BROKERS` — streams, topics and consumers created on first use; in-memory otherwise and while the broker is down; `nitrogen install nats|kafka`). **Cache:** in-process by default; `app.SetCache(nitro.RedisCache(…))` shares it across replicas (Redis down → reads hit the DB). **PgBouncer:** `?pgbouncer=true` + `DATABASE_DIRECT_URL` for migrations.
 
 ## v2 conventions — do NOT configure these (STOP)
 

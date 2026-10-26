@@ -336,13 +336,3 @@ func radixLookupNoAlloc(root *radixNode, path []byte, c *domain.Ctx) (domain.Han
 	}
 	return node.handler, true
 }
-
-// stringsIndexByte is a copy of strings.IndexByte for []byte paths.
-func stringsIndexByte(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
-}

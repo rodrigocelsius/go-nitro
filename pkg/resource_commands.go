@@ -66,66 +66,73 @@ func makeCommandHandler(
 ) Handler {
 	return func(c *Ctx) error {
 		kind, inputType, _ := analyzeHandlerFn(cmd.fn.Type())
-		ctx := c.Context()
 
-		var entity any
-		var id string
-		if kind == commandItem {
-			id = c.Param("id")
-			if id == "" {
-				return BadRequest("missing id parameter")
-			}
-			var err error
-			entity, err = repo.FindByID(ctx, id)
-			if err != nil {
-				return mapCommandRepoError(err)
-			}
-			if entity == nil {
-				return NotFound("resource not found")
-			}
-			if cfg != nil && cfg.TenantScope != nil {
-				tid, ok := cfg.TenantScope(&c.Ctx)
-				col := cfg.TenantColumn
-				if col == "" {
-					col = "tenant_id"
+		// A Command is a multi-step business action: by convention it runs in
+		// one transaction when the repository supports it (ResourceConfig.NoTx
+		// opts out). The response is written only after COMMIT.
+		var results []reflect.Value
+		err := domain.RunInTx(c.Context(), resourceTransactor(repo, cfg), func(ctx context.Context) error {
+			var entity any
+			var id string
+			if kind == commandItem {
+				id = c.Param("id")
+				if id == "" {
+					return BadRequest("missing id parameter")
 				}
-				if !ok || !usecases.EntityBelongsToTenant(entity, col, tid) {
+				var err error
+				entity, err = repo.FindByID(ctx, id)
+				if err != nil {
+					return mapCommandRepoError(err)
+				}
+				if entity == nil {
 					return NotFound("resource not found")
 				}
-			}
-			if cfg != nil && cfg.OwnerCheck != nil && !cfg.OwnerCheck(&c.Ctx, entity) {
-				return NotFound("resource not found")
-			}
-			if err := runResourceRules(entity, cfg.Rules); err != nil {
-				return err
-			}
-			if cmd.when.IsValid() {
-				if callPredicate(cmd.when, entity) && len(cmd.roles) > 0 {
+				if cfg != nil && cfg.TenantScope != nil {
+					tid, ok := cfg.TenantScope(&c.Ctx)
+					col := cfg.TenantColumn
+					if col == "" {
+						col = "tenant_id"
+					}
+					if !ok || !usecases.EntityBelongsToTenant(entity, col, tid) {
+						return NotFound("resource not found")
+					}
+				}
+				if cfg != nil && cfg.OwnerCheck != nil && !cfg.OwnerCheck(&c.Ctx, entity) {
+					return NotFound("resource not found")
+				}
+				if err := runResourceRules(entity, cfg.Rules); err != nil {
+					return err
+				}
+				if cmd.when.IsValid() {
+					if callPredicate(cmd.when, entity) && len(cmd.roles) > 0 {
+						if err := requireRolesOnCtx(c, cmd.roles); err != nil {
+							return err
+						}
+					}
+				} else if len(cmd.roles) > 0 {
 					if err := requireRolesOnCtx(c, cmd.roles); err != nil {
 						return err
 					}
 				}
-			} else if len(cmd.roles) > 0 {
-				if err := requireRolesOnCtx(c, cmd.roles); err != nil {
+			}
+
+			args := []reflect.Value{reflect.ValueOf(ctx)}
+			if kind == commandItem {
+				args = append(args, reflect.ValueOf(id))
+			}
+
+			if inputType != nil {
+				in, err := parseCommandInput(c, inputType)
+				if err != nil {
 					return err
 				}
+				args = append(args, reflect.ValueOf(in))
 			}
-		}
 
-		args := []reflect.Value{reflect.ValueOf(ctx)}
-		if kind == commandItem {
-			args = append(args, reflect.ValueOf(id))
-		}
-
-		if inputType != nil {
-			in, err := parseCommandInput(c, inputType)
-			if err != nil {
-				return err
-			}
-			args = append(args, reflect.ValueOf(in))
-		}
-
-		results, err := callHandler(c, cmd.fn, args)
+			var err error
+			results, err = callHandler(c, cmd.fn, args)
+			return err
+		})
 		if err != nil {
 			return err
 		}

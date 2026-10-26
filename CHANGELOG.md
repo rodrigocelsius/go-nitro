@@ -4,6 +4,39 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.0] - 2026-10-26
+
+### Added
+- **NATS JetStream and Kafka queues with zero configuration:** new modules `adapters/nats` and `adapters/kafka` (`nitro.NewNATSQueue` / `nitro.NewKafkaQueue`). `nitro.QueueFromEnv()` now selects RabbitMQ (`RABBITMQ_URL`), NATS (`NATS_URL`) or Kafka (`KAFKA_BROKERS`), or `NITRO_QUEUE=…` explicitly; streams, topics, durable consumers and consumer groups are created on first use; retries with backoff and `<queue>.dlq` dead letters; in-memory fallback while the broker is down. `nitrogen install nats|kafka` writes env + docker-compose. Opt out of the clients with `-tags nitro_nonats,nitro_nokafka`.
+- **In-process pooling fallback for every engine:** MySQL / MariaDB / SQL Server now bound open connections by default (`max(10, 4×CPU)`, `NITRO_DB_MAX_CONNS=0` restores unlimited) so bursts queue in the process instead of exhausting `max_connections`; SQLite files get `busy_timeout(5000)` + WAL + `BEGIN IMMEDIATE` and a pool of 4 (concurrent writers queue instead of failing with `database is locked`); PgBouncer mode turns on automatically for DSNs on port 6432. Docs list the recommended external pooler per database.
+- **`examples/v2`:** resource-crud, transactions, business-commands, queue, cache and a CLI-generated Clean Architecture app (`cli-shop`) — all tested without Docker.
+- CI job `brokers` (real Kafka + NATS) and `make test-brokers`.
+- **Ambient transactions:** `db.InTx(ctx, fn)` / `store.InTx` / `nitro.InTx(ctx, db, fn)` carry the transaction in `ctx` — every BLinq Store, repository or Resource on the same database called with that `ctx` joins it; nested calls join the outer transaction. `nitro.AfterCommit` / `nitro.AfterRollback` run side effects only after the outcome is known; `db.InTxRetry` retries deadlocks / serialization failures. `db.Tx(ctx, func(tx *DB))` keeps working on top of it (and a nested `tx.Tx` now joins instead of failing with "no pool").
+- **Atomic Resource writes by convention:** with a BLinq repository, a Resource with write hooks runs load + `Before*` + SQL + `After*` + `OnMutate` in one transaction (a hook error rolls the write back); `Commands` run in one transaction too and answer after `COMMIT`. New hooks `BeforeDelete` and `AfterCommit`; opt out with `ResourceConfig.NoTx`. Transient conflicts answer 409 `{"code":"tx_conflict","retryable":true}` (`domain.TxConflictError`, `nitro.IsRetryable`; MySQL 1213/1205 registered by the driver).
+- **PgBouncer mode:** `?pgbouncer=true` in the DSN, `NITRO_DB_PGBOUNCER=1` or `PoolConfig.PgBouncer` switch pgx to the simple protocol (no named prepared statements) and run migrations over `DATABASE_DIRECT_URL` (or without the session advisory lock, with a warning).
+- **Pool sizing from env for every engine:** `NITRO_DB_MAX_CONNS`, `NITRO_DB_MIN_CONNS`, `NITRO_DB_MAX_IDLE_CONNS`, `NITRO_DB_CONN_MAX_LIFETIME`, `NITRO_DB_CONN_MAX_IDLE_TIME`; `database/sql` engines now keep 10 idle connections and recycle them (30 min lifetime / 5 min idle) instead of Go's 2-idle default.
+- **Queue fallback:** `nitro.QueueFromEnv()` — RabbitMQ when `RABBITMQ_URL` is set, in-memory otherwise; while the broker is down, subscribed queues are processed in memory and other messages are buffered and re-published in order when it returns (`nitro.NewFallbackQueue`). The in-memory queue applies backpressure (`PublishTimeout`, default 1 s) instead of failing as soon as its buffer is full.
+- **Shared L2 read-through for Resources:** with `app.SetCache(nitro.RedisCache(…))`, `GET /:id` and list pages are read from and stored in Redis (all replicas share them); a failing Redis is bypassed for 30 s and reads go to the database. `nitro.L2CacheRepo` for explicit use.
+- Mobile BFF device tracking is real: `nitro.DeviceStore` (in-memory default, pluggable), `MaxDevicesPerUser` enforced, `GET/DELETE {prefix}/devices`.
+- `nitro.AsResourceRepository`: generated handlers take it instead of `*sqladapter.Store` (no infrastructure import in the handler layer).
+
+### Fixed
+- `nitro.FillStringFrom` panicked (HTTP 500) with a nil optional foreign key (`*nitro.UUID`), the pattern recommended for denormalized names.
+- `nitrogen make:usecase` rewrote the scaffolded `usecase/<x>/repository.go` and dropped `Filter.Q`, breaking the generated handler and repository.
+- Generated app README said "Nitro v1" and `go run .` (the server lives in `cmd/server`).
+- `StoreRepo` / reflect repositories overwrote the whole entity with the reloaded row after Create/Update, wiping non-column fields (`db:"-"`, e.g. a nested `Items` slice) before `After*` hooks and the response — the "parent + items in AfterCreate" pattern silently inserted nothing.
+- With an App cache (`SetCache`), Resources disabled the in-process cache but never read from the App cache: every read hit the database.
+- `MemoryCache` / `LRUCache.Set` with `ttl <= 0` expired the entry immediately (Redis applied its default); now the 5-minute default applies. `MemoryCache` sweeps expired entries when unbounded and no longer takes a write lock on every miss.
+- Gateway cache invalidation computed a wrong table for writes with irregular spacing (`INSERT\n  INTO t`), leaving stale cached SELECTs.
+- RabbitMQ publisher held the client mutex while waiting for the broker confirm (all publishes serialized) and publish-only processes never reconnected after a broker restart.
+- Async logger batch loop used a bare `break` inside `select` and spun through the remaining iterations.
+- GitHub OAuth fetched `/user/emails` from api.github.com even when `UserInfoURL` pointed to GitHub Enterprise.
+- `locale`: POSIX `C`/`POSIX` locales resolved to `"c"`; now fall back to `en-US`.
+- CLI: generated code uses `sqladapter.StoreFor[T](db)` (table by convention) as the docs prescribe.
+
+### Removed
+- Unused and broken code: the `cache/` module (could not cache structs; superseded by `adapters/cache` + `nitro.MemoryCache`/`RedisCache`), `usecases.CacheMiddleware` (never stored responses) and the deprecated `usecases.Remember`, the unused job dispatcher (`usecases.Dispatcher`, `domain.Job*`, `domain.ErrEmptyQueue`, `adapters/queue`), `adapters/json` + `ports.Serializer`, and dead helpers reported by staticcheck (U1000).
+
 ## [2.0.10] - 2026-10-19
 
 ### Changed

@@ -1,6 +1,8 @@
 # Examples
 
-Runnable apps for Nitro v1. All live under [`v1/`](v1/).
+**v2 (current):** [`v2/`](v2/) — resource CRUD, transactions, business commands, queues (RabbitMQ / NATS / Kafka), cache, CLI-generated app.
+
+Legacy apps for Nitro v1 live under [`v1/`](v1/).
 
 ## Happy path (CLI)
 

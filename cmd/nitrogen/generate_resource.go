@@ -2,80 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
-
-	migrationgen "github.com/rodrigocelsius/go-nitro/codegen/migration/v2"
 )
-
-// cmdGenerateResource: nitrogen g resource Product name:string price:float64 active:bool
-func cmdGenerateResource(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: nitrogen g resource <Name> [field:type ...] [--dir .] [--table name]")
-		os.Exit(1)
-	}
-	name := args[0]
-	if name == "" || !unicode.IsUpper(rune(name[0])) {
-		fmt.Fprintln(os.Stderr, "nitrogen: model name must be exported PascalCase (e.g. Product)")
-		os.Exit(1)
-	}
-
-	dir := "."
-	table := ""
-	var fields []fieldSpec
-	for i := 1; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--dir" && i+1 < len(args):
-			dir = args[i+1]
-			i++
-		case a == "--table" && i+1 < len(args):
-			table = args[i+1]
-			i++
-		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(os.Stderr, "nitrogen: unknown flag %s\n", a)
-			os.Exit(1)
-		default:
-			fs, err := parseFieldSpec(a)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "nitrogen: %v\n", err)
-				os.Exit(1)
-			}
-			fields = append(fields, fs)
-		}
-	}
-	if table == "" {
-		table = pluralize(strings.ToLower(toSnake(name)))
-	}
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "nitrogen: %v\n", err)
-		os.Exit(1)
-	}
-
-	modelFile := filepath.Join(dir, strings.ToLower(name)+".go")
-	if err := writeFileFmt(modelFile, []byte(renderModelFile(name, table, fields)), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "nitrogen: write model: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("nitrogen: wrote %s\n", modelFile)
-
-	// BLinq metamodel (DSL in modelgen/)
-	cmdMakeData(modelFile, false)
-
-	// Migration
-	migPath, err := migrationgen.Make(modelFile, migrationgen.MakeOptions{
-		Dir:  filepath.Join(dir, "migrations"),
-		Name: "create_" + table,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "nitrogen: migration: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("nitrogen: wrote %s\n", migPath)
-}
 
 type fieldSpec struct {
 	Name string
@@ -179,32 +108,5 @@ func toSnake(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	return b.String()
-}
-
-func renderModelFile(name, table string, fields []fieldSpec) string {
-	needTime := false
-	for _, f := range fields {
-		if f.Type == "time.Time" {
-			needTime = true
-			break
-		}
-	}
-	var b strings.Builder
-	b.WriteString("package main\n\n")
-	b.WriteString("import (\n")
-	if needTime {
-		b.WriteString("\t\"time\"\n\n")
-	}
-	b.WriteString("\tnitro \"github.com/rodrigocelsius/go-nitro/pkg/v2\"\n")
-	b.WriteString(")\n\n")
-	b.WriteString("//go:generate nitrogen make " + strings.ToLower(name) + ".go --data\n\n")
-	fmt.Fprintf(&b, "//nitro:table=%s\n", table)
-	fmt.Fprintf(&b, "type %s struct {\n", name)
-	b.WriteString("\tnitro.Model\n")
-	for _, f := range fields {
-		fmt.Fprintf(&b, "\t%s %s %s\n", f.Name, f.Type, f.Tag)
-	}
-	b.WriteString("}\n")
 	return b.String()
 }

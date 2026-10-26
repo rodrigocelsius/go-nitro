@@ -10,7 +10,6 @@ import (
 var (
 	mu       sync.RWMutex
 	override string
-	tzName   string
 	tzLoc    *time.Location
 )
 
@@ -21,7 +20,8 @@ func SetLocale(locale string) {
 	override = normalize(locale)
 }
 
-// Locale returns the active locale: NITRO_LOCALE → override → LANG/LC_ALL → en-US.
+// Locale returns the active locale: SetLocale override → NITRO_LOCALE →
+// LC_ALL/LANG (the POSIX "C"/"POSIX" locales count as unset) → en-US.
 func Locale() string {
 	mu.RLock()
 	o := override
@@ -52,7 +52,7 @@ func WithLocale(locale string) string {
 func SetTimezone(name string) error {
 	if name == "" {
 		mu.Lock()
-		tzName, tzLoc = "", time.UTC
+		tzLoc = time.UTC
 		mu.Unlock()
 		return nil
 	}
@@ -61,12 +61,12 @@ func SetTimezone(name string) error {
 		return err
 	}
 	mu.Lock()
-	tzName, tzLoc = name, loc
+	tzLoc = loc
 	mu.Unlock()
 	return nil
 }
 
-// Timezone returns the configured location (UTC if unset).
+// Timezone returns the SetTimezone location, else NITRO_TZ, else time.Local.
 func Timezone() *time.Location {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -100,5 +100,8 @@ func normalize(locale string) string {
 func fromEnvLocale(v string) string {
 	// e.g. pt_BR.UTF-8
 	v = strings.Split(v, ".")[0]
+	if v == "C" || v == "POSIX" || v == "" {
+		return "en-US"
+	}
 	return normalize(v)
 }

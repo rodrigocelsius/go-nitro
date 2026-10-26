@@ -78,6 +78,7 @@ func Open(ctx context.Context, driver, dsn string, opts ...gateway.Option) (*DB,
 		if err := ensureSQLiteDir(dsn); err != nil {
 			return nil, err
 		}
+		dsn = sqliteDSNDefaults(dsn)
 	}
 	if !slices.Contains(sql.Drivers(), name) {
 		return nil, fmt.Errorf("sqladapter: driver %q is not compiled in (built with -tags nitro_no%s?)", name, map[string]string{"sqlite": "sqlite", "mysql": "mysql", "sqlserver": "mssql"}[name])
@@ -86,6 +87,7 @@ func Open(ctx context.Context, driver, dsn string, opts ...gateway.Option) (*DB,
 	if err != nil {
 		return nil, fmt.Errorf("sqladapter: open: %w", err)
 	}
+	applyStdPool(std, d, dsn)
 	if err := std.PingContext(ctx); err != nil {
 		_ = std.Close()
 		return nil, fmt.Errorf("sqladapter: ping: %w", err)

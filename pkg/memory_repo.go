@@ -45,6 +45,7 @@ func (r *MemoryRepository[T]) SoftDeleteEnabled() bool {
 	return r.soft
 }
 
+// FindByID returns a copy of the entity with id (404 NotFound when absent or soft-deleted).
 func (r *MemoryRepository[T]) FindByID(_ context.Context, id any) (*T, error) {
 	t, ok := r.items.Get(IDKey(id))
 	if !ok || isSoftDeleted(t) {
@@ -53,6 +54,7 @@ func (r *MemoryRepository[T]) FindByID(_ context.Context, id any) (*T, error) {
 	return cloneEntity(t), nil
 }
 
+// List returns one page of entities (soft-deleted rows excluded).
 func (r *MemoryRepository[T]) List(_ context.Context, page, perPage int) (*ResourceListResult, error) {
 	all := r.items.Values()
 	if r.soft {
@@ -71,6 +73,8 @@ func (r *MemoryRepository[T]) List(_ context.Context, page, perPage int) (*Resou
 	return ListResult(copies, page, perPage), nil
 }
 
+// Create stores a copy of entity, assigning a UUID v7 ID when empty;
+// an existing ID is a 409 Conflict.
 func (r *MemoryRepository[T]) Create(_ context.Context, entity *T) error {
 	id := entityID(entity)
 	if id == "" {
@@ -85,6 +89,7 @@ func (r *MemoryRepository[T]) Create(_ context.Context, entity *T) error {
 	return nil
 }
 
+// Update replaces the stored entity with the same ID, keeping CreatedAt.
 func (r *MemoryRepository[T]) Update(_ context.Context, entity *T) error {
 	id := entityID(entity)
 	key := IDKey(id)
@@ -101,6 +106,7 @@ func (r *MemoryRepository[T]) Update(_ context.Context, entity *T) error {
 	return nil
 }
 
+// Delete removes the entity (soft delete when the model has DeletedAt).
 func (r *MemoryRepository[T]) Delete(_ context.Context, id any) error {
 	key := IDKey(id)
 	existing, ok := r.items.Get(key)

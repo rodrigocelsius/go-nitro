@@ -105,8 +105,12 @@ func TestIsSafeRequestID(t *testing.T) {
 }
 
 func TestQuotePathStaticRel(t *testing.T) {
-	// filepath.Rel based check covered indirectly; ensure helper semantics
-	if isSafeRedirectPath("/var/www") && !isSafeRedirectPath("//var") {
-		// smoke
+	if !isSafeRedirectPath("/var/www") {
+		t.Fatal("/var/www is a safe local path")
+	}
+	for _, p := range []string{"//evil.com", "", "var", "/a\\b", "/a\r\nSet-Cookie: x"} {
+		if isSafeRedirectPath(p) {
+			t.Errorf("isSafeRedirectPath(%q) = true, want false", p)
+		}
 	}
 }

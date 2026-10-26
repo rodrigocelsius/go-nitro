@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/fs"
+	"log"
 	"os"
 
 	"github.com/jackc/pgx/v5"
@@ -26,12 +27,45 @@ func (d *DB) Migrate(ctx context.Context, source migrate.Source) error {
 	if d == nil || d.Pool == nil {
 		return fmt.Errorf("pgx: db is nil")
 	}
+	var exec migrate.Executor = AdaptMigrate(d.Pool)
+	if d.Pool.PgBouncer() {
+		// Session advisory locks and multi-statement DDL do not survive
+		// PgBouncer transaction pooling: migrate over a direct connection.
+		if direct := DirectDSN(); direct != "" {
+			pool, err := New(ctx, direct)
+			if err != nil {
+				return fmt.Errorf("pgx: migrate via DATABASE_DIRECT_URL: %w", err)
+			}
+			defer pool.Close()
+			exec = AdaptMigrate(pool)
+		} else {
+			log.Printf("pgx: PgBouncer mode without DATABASE_DIRECT_URL — migrating without the advisory lock (run migrations from one instance, or set DATABASE_DIRECT_URL)")
+			exec = noLockMigrateExec{exec.(*migrateExec)}
+		}
+	}
 	r := &migrate.Runner{
-		DB:            AdaptMigrate(d.Pool),
+		DB:            exec,
 		Source:        source,
 		Transactional: true,
 	}
 	return r.Up(ctx)
+}
+
+// noLockMigrateExec hides migrate.Locker: a session-level pg_advisory_lock
+// taken through PgBouncer may be released on another server connection and
+// leak forever. Transactions (one per migration) are still used.
+type noLockMigrateExec struct{ e *migrateExec }
+
+func (n noLockMigrateExec) Exec(ctx context.Context, sql string, args []any) error {
+	return n.e.Exec(ctx, sql, args)
+}
+
+func (n noLockMigrateExec) Query(ctx context.Context, sql string, args []any) (migrate.Rows, error) {
+	return n.e.Query(ctx, sql, args)
+}
+
+func (n noLockMigrateExec) BeginTx(ctx context.Context) (migrate.TxExecutor, error) {
+	return n.e.BeginTx(ctx)
 }
 
 // MigrateUp applies ./migrations (goose). Shortcut for hello-world / local apps.
