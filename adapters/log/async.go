@@ -3,12 +3,14 @@ package log
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
 // logEntry represents a log entry for async dispatch.
 type logEntry struct {
+	out   domain.Logger // the (possibly With-derived) logger that emitted it
 	level string
 	msg   string
 	attrs []any
@@ -21,7 +23,10 @@ type AsyncLogger struct {
 	ch        chan logEntry
 	done      chan struct{}
 	batchSize int
-	wg        sync.WaitGroup
+	wg        *sync.WaitGroup
+	// inflight counts entries queued or being written (shared with With
+	// loggers), so Flush also waits for the entry the loop already dequeued.
+	inflight *atomic.Int64
 }
 
 // AsyncConfig configures the async logger.
@@ -53,6 +58,8 @@ func NewAsyncLogger(inner domain.Logger, cfg ...AsyncConfig) *AsyncLogger {
 		ch:        make(chan logEntry, config.BufferSize),
 		done:      make(chan struct{}),
 		batchSize: config.BatchSize,
+		wg:        &sync.WaitGroup{},
+		inflight:  &atomic.Int64{},
 	}
 
 	al.wg.Add(1)
@@ -116,23 +123,26 @@ func (al *AsyncLogger) writeBatch(batch []logEntry) {
 }
 
 func (al *AsyncLogger) writeEntry(entry logEntry) {
+	defer al.inflight.Add(-1)
 	switch entry.level {
 	case "debug":
-		al.inner.Debug(entry.msg, entry.attrs...)
+		entry.out.Debug(entry.msg, entry.attrs...)
 	case "info":
-		al.inner.Info(entry.msg, entry.attrs...)
+		entry.out.Info(entry.msg, entry.attrs...)
 	case "warn":
-		al.inner.Warn(entry.msg, entry.attrs...)
+		entry.out.Warn(entry.msg, entry.attrs...)
 	case "error":
-		al.inner.Error(entry.msg, entry.attrs...)
+		entry.out.Error(entry.msg, entry.attrs...)
 	}
 }
 
 func (al *AsyncLogger) send(level, msg string, attrs []any) {
+	al.inflight.Add(1)
 	select {
-	case al.ch <- logEntry{level: level, msg: msg, attrs: attrs}:
+	case al.ch <- logEntry{out: al.inner, level: level, msg: msg, attrs: attrs}:
 	default:
 		// Channel full — drop entry (does not block the caller)
+		al.inflight.Add(-1)
 	}
 }
 
@@ -158,13 +168,15 @@ func (al *AsyncLogger) With(attrs ...any) domain.Logger {
 		ch:        al.ch,
 		done:      al.done,
 		batchSize: al.batchSize,
+		wg:        al.wg,
+		inflight:  al.inflight,
 	}
 }
 
 // Flush waits until all pending entries are processed.
 func (al *AsyncLogger) Flush() {
-	// Wait until the channel is drained
-	for len(al.ch) > 0 {
+	// Wait until every queued entry has been written (not just dequeued).
+	for al.inflight.Load() > 0 {
 		// Yield to the batch processor
 		runtime.Gosched()
 	}

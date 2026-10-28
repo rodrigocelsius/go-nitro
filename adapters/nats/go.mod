@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/nats-io/nats-server/v2 v2.15.1
 	github.com/nats-io/nats.go v1.55.0
-	github.com/rodrigocelsius/go-nitro/queue/v2 v2.1.0
+	github.com/rodrigocelsius/go-nitro/queue/v2 v2.1.1
 )
 
 require (

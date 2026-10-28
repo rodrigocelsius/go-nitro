@@ -3,7 +3,7 @@ module github.com/rodrigocelsius/go-nitro/adapters/kafka/v2
 go 1.26.0
 
 require (
-	github.com/rodrigocelsius/go-nitro/queue/v2 v2.1.0
+	github.com/rodrigocelsius/go-nitro/queue/v2 v2.1.1
 	github.com/segmentio/kafka-go v0.4.51
 )
 

@@ -100,9 +100,18 @@ func TestNATS_RetryThenDeadLetter(t *testing.T) {
 	if calls.Load() != 3 {
 		t.Fatalf("handler calls = %d, want 3 (RetryMax)", calls.Load())
 	}
-	st, _ := c.Stats(ctx, "jobs")
-	if st.Failed != 1 {
-		t.Fatalf("stats = %+v", st)
+	// The dead letter is published before Failed is counted, so the DLQ
+	// handler can run first: wait for the counter instead of reading it once.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, _ := c.Stats(ctx, "jobs")
+		if st.Failed == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("stats = %+v", st)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

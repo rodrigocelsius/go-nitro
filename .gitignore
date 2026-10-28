@@ -34,6 +34,12 @@ examples/v1/resource-aftercreate/resource-aftercreate
 examples/v1/resource-tenant-scoped/resource-tenant-scoped
 examples/v1/order-business/order-business
 examples/v1/pos-sales/pos-sales
+examples/v2/*/queue
+examples/v2/*/cache
+examples/v2/*/transactions
+examples/v2/*/resource-crud
+examples/v2/*/business-commands
+examples/v2/*/cli-shop
 cmd/nitrogen/nitrogen
 
 # Test and coverage artifacts

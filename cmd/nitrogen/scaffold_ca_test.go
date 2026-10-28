@@ -287,7 +287,11 @@ func TestPreferResourceMode_BasicWithSQL(t *testing.T) {
 // (it used to drop Filter.Q and break the generated handler/repository).
 func TestMakeUsecaseKeepsScaffoldRepositoryPort(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	cwd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
 	_ = os.WriteFile("go.mod", []byte("module example.com/app\n\ngo 1.22\n"), 0644)
 	_ = os.MkdirAll("internal/usecase/product", 0755)
 	_ = os.MkdirAll("internal/model", 0755)

@@ -4,11 +4,11 @@ go 1.22.2
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/rodrigocelsius/go-nitro/domain/v2 v2.1.0
-	github.com/rodrigocelsius/go-nitro/ports/v2 v2.1.0
+	github.com/rodrigocelsius/go-nitro/domain/v2 v2.1.1
+	github.com/rodrigocelsius/go-nitro/ports/v2 v2.1.1
 )
 
-require github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.1.0 // indirect
+require github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.1.1 // indirect
 
 replace (
 	github.com/rodrigocelsius/go-nitro/domain/v2 => ../../../domain

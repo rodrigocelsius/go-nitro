@@ -20,7 +20,8 @@ type ctxKey struct{}
 
 func TestDetach_SurvivesCancellationAndKeepsValues(t *testing.T) {
 	parent, cancel := context.WithCancel(context.WithValue(context.Background(), ctxKey{}, "v"))
-	c := &FastCtx{reqCtx: parent}
+	c := &FastCtx{}
+	c.SetRequestContext(parent)
 	d := c.Detach()
 	cancel()
 	if d.Err() != nil {

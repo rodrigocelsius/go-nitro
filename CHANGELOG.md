@@ -4,6 +4,20 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.1] - 2026-10-28
+
+### Security
+- Bump `github.com/rabbitmq/amqp091-go` v1.10.0 → v1.16.0 (GO-2026-6502, GO-2026-6503, GO-2026-6700) in `pkg`, `adapters/amqp`, `data/*` and the examples.
+- Bump `github.com/quic-go/quic-go` v0.59.0 → v0.59.1 in `benchmarks` (GO-2026-5676).
+
+### Fixed
+- Data race between a pooled `*FastCtx` used as `context.Context` and `database/sql` (`Rows.awaitDone` calls `Done()` from its own goroutine, possibly after the request context was reset for the next request). The request context is now stored atomically.
+- `locale.SetLocale("")` pinned the locale to `en-US` instead of clearing the override (as documented), so `NITRO_LOCALE` / `LANG` were ignored afterwards.
+- `AsyncLogger.Flush` could return before the last dequeued entry was written, and loggers derived with `AsyncLogger.With(...)` wrote through the parent logger, dropping their attributes.
+- `cmd/nitrogen` tests used `t.Chdir` (Go 1.24+) in a `go 1.22` module, failing `go vet`.
+- Flaky `adapters/nats` test: `TestNATS_RetryThenDeadLetter` read `Stats` before the failure was counted (the DLQ handler can run first).
+- A 41 MB example binary (`examples/v2/queue/queue`) was committed; it is untracked and the `examples/v2` binaries are ignored.
+
 ## [2.1.0] - 2026-10-26
 
 ### Added
@@ -99,7 +113,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Abstract base structs became tables:** a struct only used as an embedded base (without `//nitro:table=…`) no longer generates a metamodel/table.
 - **`nitrogen new` / `install` wrote absolute `replace` paths** (`=> /home/user/...`) into `go.mod`, breaking Docker builds, CI and other machines. Local Nitro replaces are now relative to the module (`=> ../../go-nitro/pkg`).
 
-## [Unreleased]
+## [2.1.1] - 2026-10-28
 
 > Versioning was reset: the first published release of this repository is **v2.0.0** (module path `github.com/rodrigocelsius/go-nitro/.../v2`). Entries below the 2.0.0 section describe the code's earlier internal history.
 
@@ -339,7 +353,7 @@ Docs and AI playbooks now point at **`sqladapter.OpenEnv` / `platform.Open`**, C
 - `nitrogen new --stack` / `--standard` / `--complex`
 - `make:migration` (use `migrate:make`)
 
-## [Unreleased]
+## [2.1.1] - 2026-10-28
 
 ### Added
 - **Text/code helpers** on the `nitro` facade: `IsDigits`, `DigitsOnly`, `SplitName`, `NormalizeEmail`, `IsEmail`, `RandomDigits`, `RandomAlphaNum`, `RandomHex`, `IfBlank`, `Ptr`, `Deref`, `Contains`

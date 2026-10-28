@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
@@ -90,10 +91,13 @@ type FastCtx struct {
 	domain.Ctx
 	fasthttpReq *fasthttp.RequestCtx
 	startTime   time.Time
-	reqCtx      context.Context
-	locals      map[string]any
-	validator   domain.Validator
-	app         *App // set during request handling (reverse routing)
+	// reqCtx is atomic because *FastCtx is passed as a context.Context and
+	// database/sql (Rows.awaitDone) may call Done() from its own goroutine
+	// after the handler returned, racing with Reset of the pooled context.
+	reqCtx    atomic.Pointer[reqCtxBox]
+	locals    map[string]any
+	validator domain.Validator
+	app       *App // set during request handling (reverse routing)
 }
 
 // NewFastCtx creates a new FastCtx.
@@ -108,7 +112,7 @@ func (c *FastCtx) Reset(fctx *fasthttp.RequestCtx) {
 	c.Ctx.ResetHot()
 	c.fasthttpReq = fctx
 	c.AdapterData = c
-	c.reqCtx = nil
+	c.reqCtx.Store(nil)
 	c.startTime = time.Time{}
 	// validator/app are assigned by Handler on each request.
 	if c.locals != nil {
@@ -164,15 +168,21 @@ func (c *FastCtx) Detach() context.Context {
 }
 
 func (c *FastCtx) RequestContext() context.Context {
-	if c.reqCtx != nil {
-		return c.reqCtx
+	if b := c.reqCtx.Load(); b != nil {
+		return b.ctx
 	}
 	return context.Background()
 }
 
+type reqCtxBox struct{ ctx context.Context }
+
 // SetRequestContext sets the request context.Context.
 func (c *FastCtx) SetRequestContext(ctx context.Context) {
-	c.reqCtx = ctx
+	if ctx == nil {
+		c.reqCtx.Store(nil)
+		return
+	}
+	c.reqCtx.Store(&reqCtxBox{ctx: ctx})
 }
 
 // Method returns the HTTP request method (GET, POST, etc).

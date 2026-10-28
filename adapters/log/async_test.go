@@ -142,3 +142,25 @@ func BenchmarkSyncLogger(b *testing.B) {
 		mock.Info("benchmark message")
 	}
 }
+
+// withLogger records which logger an entry was written to.
+type withLogger struct {
+	*mockLogger
+	child *mockLogger
+}
+
+func (w *withLogger) With(attrs ...any) domain.Logger { return w.child }
+
+func TestAsyncLoggerWithWritesToDerivedLogger(t *testing.T) {
+	root := &withLogger{mockLogger: newMockLogger(), child: newMockLogger()}
+	async := NewAsyncLogger(root, AsyncConfig{BufferSize: 16, BatchSize: 4})
+	defer async.Close()
+
+	async.With("k", "v").Info("child")
+	async.Info("root")
+	async.Flush()
+
+	if root.child.infoCount() != 1 || root.infoCount() != 1 {
+		t.Fatalf("With entries must go to the derived logger: root=%d child=%d", root.infoCount(), root.child.infoCount())
+	}
+}

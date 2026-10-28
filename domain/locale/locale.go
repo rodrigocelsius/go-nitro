@@ -17,6 +17,10 @@ var (
 func SetLocale(locale string) {
 	mu.Lock()
 	defer mu.Unlock()
+	if strings.TrimSpace(locale) == "" {
+		override = "" // normalize("") is "en-US", which would pin it instead
+		return
+	}
 	override = normalize(locale)
 }
 
