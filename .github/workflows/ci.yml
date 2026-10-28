@@ -20,7 +20,7 @@ jobs:
     outputs:
       list: ${{ steps.find.outputs.list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: find
         run: |
           # Exclude the umbrella root go.mod (no packages; go test ./... exits 1).
@@ -36,7 +36,7 @@ jobs:
       matrix:
         module: ${{ fromJson(needs.modules.outputs.list) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -57,7 +57,7 @@ jobs:
     outputs:
       list: ${{ steps.find.outputs.list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: find
         run: |
           list=$(find examples -name go.mod -printf '%h\n' | sort | jq -R . | jq -sc .)
@@ -74,7 +74,7 @@ jobs:
       NITRO_OTEL: "0"
       NITRO_DB_QUIET: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.example }}/go.mod
@@ -92,7 +92,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -104,7 +104,7 @@ jobs:
   vulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -122,7 +122,7 @@ jobs:
   sql-integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: data/adapter/sql/go.mod
@@ -143,7 +143,7 @@ jobs:
   brokers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: pkg/go.mod
@@ -168,7 +168,7 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: stable
