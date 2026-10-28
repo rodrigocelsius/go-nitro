@@ -9,16 +9,16 @@ require (
 	github.com/rodrigocelsius/go-nitro/pkg/uuid/v2 v2.1.0
 	github.com/rodrigocelsius/go-nitro/ports/v2 v2.1.0
 	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.1.0
-	github.com/valyala/fasthttp v1.73.0
-	golang.org/x/crypto v0.57.0
+	github.com/valyala/fasthttp v1.76.0
+	golang.org/x/crypto v0.58.0
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.2 // indirect
-	github.com/klauspost/compress v1.19.1 // indirect
+	github.com/klauspost/compress v1.20.3 // indirect
+	github.com/molecule-man/go-brrr v1.3.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
 
 replace (
