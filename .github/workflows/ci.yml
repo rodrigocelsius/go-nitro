@@ -111,7 +111,9 @@ jobs:
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: govulncheck (all modules)
         run: |
-          for m in $(find . -name go.mod -not -path './examples/*' -printf '%h\n' | sed 's|^\./||' | grep -vx '\.'); do
+          # Same exclusions as `modules`: fixtures are parsed as AST, not built.
+          for m in $(find . -name go.mod -not -path './examples/*' -not -path '*/testdata/*' -not -path '*/routetestdata*' -not -path '*/proto_nested/*' \
+            -printf '%h\n' | sed 's|^\./||' | grep -vx '\.'); do
             echo "== $m"; (cd "$m" && govulncheck ./...) || exit 1
           done
 
