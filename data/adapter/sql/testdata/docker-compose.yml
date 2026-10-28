@@ -52,8 +52,15 @@ services:
       MSSQL_SA_PASSWORD: "Nitro_Str0ng!"
     ports:
       - "127.0.0.1:1434:1433"
+    # The image has no "create database" env var: the healthcheck creates `nitro`
+    # idempotently, so `up --wait` only returns once the database exists.
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Nitro_Str0ng!' -C -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Nitro_Str0ng!' -Q 'SELECT 1'"]
+      test:
+        - CMD-SHELL
+        - >-
+          Q="IF DB_ID('nitro') IS NULL CREATE DATABASE nitro; SELECT 1";
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Nitro_Str0ng!' -C -b -Q "$$Q" ||
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Nitro_Str0ng!' -b -Q "$$Q"
       interval: 5s
       timeout: 10s
       retries: 40
