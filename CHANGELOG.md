@@ -4,6 +4,12 @@ All notable changes to Nitro will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- **SSE did not stream.** `SSEHandler` / `SSECreate` wrote events into the buffered fasthttp response, so the client received nothing (not even headers) until the handler returned, and then every event at once. The handler now runs in a body stream writer and each event is flushed as it is sent; a failed `Send` means the client disconnected. Because the SSE handler now runs after the route handler returns, it must not use the request `*Ctx`: copy what it needs first and use `context.WithoutCancel(c.Context())`.
+- `SendRaw` wrote multi-line data as a single `data:` line, which ended the event at the first newline and corrupted the stream. Each line is now its own `data:` line, as the SSE spec requires.
+
 ## [2.1.1] - 2026-10-28
 
 ### Security
