@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-30
+
 ### Added
 - **Valkey.** `nitro.ValkeyConfig` / `ValkeyConfigFromEnv` / `NewValkeyClient` / `ValkeyClientFromEnv`, plus `ValkeyCache`, `ValkeySessionStore` and `NewValkeyBreakerStore`. Valkey (BSD-3, the fork of Redis 7.2) speaks RESP, so these run on the go-redis client and the existing Redis adapters; `VALKEY_*` variables fall back to `REDIS_*`. Covered by a live test against `valkey/valkey:8` (`NITRO_TEST_VALKEY_ADDR`).
 - `nitrogen install valkey`: env, docker-compose service (`valkey/valkey:8-alpine` with healthcheck) and `cmd/server` wiring.
