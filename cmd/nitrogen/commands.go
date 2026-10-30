@@ -10,7 +10,7 @@ import (
 
 func cmdNew(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: nitrogen new <project-name> [--basic|--microservice|--worker|--fleet] [--module <path>] [--services a,b] [--nitro-path dir]")
+		fmt.Fprintln(os.Stderr, "usage: nitrogen new <project-name> [--basic|--microservice|--worker|--fleet] [--module <path>] [--services a,b] [--broker nats|rabbitmq] [--nitro-path dir]")
 		os.Exit(1)
 	}
 

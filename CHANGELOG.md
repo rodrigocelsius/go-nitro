@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `nitrogen new --fleet` runs **NATS JetStream** (Apache-2.0) and **Valkey** (BSD-3) instead of RabbitMQ and Redis 7 by default. `--broker rabbitmq` keeps the previous broker.
+- Generated workers pick the broker with `nitro.QueueFromEnv()` (`NATS_URL`, `RABBITMQ_URL`, `KAFKA_BROKERS`, `NITRO_QUEUE`) instead of a hard-wired `NewRabbitQueue`; their config no longer carries a `RabbitMQ` block. A standalone `nitrogen new --worker` still writes `RABBITMQ_*` to `.env`.
+
+### Fixed
+- Generated `go.mod` files required `pkg/v2 v2.0.0` and `go 1.25.0`, so new projects started on an old framework (no `QueueFromEnv`, no Valkey helpers) and the fleet `go.work` broke after `go mod tidy`. They now require the release the CLI belongs to (`cmd/nitrogen/framework_version.go`, checked by `scripts/release.sh`) and `go 1.26.0`, the floor of the v2.2 modules.
+
 ## [2.2.0] - 2026-10-30
 
 ### Added

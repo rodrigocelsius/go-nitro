@@ -35,7 +35,7 @@ Architecture — so you sell the product, not the framework.
 
 ## ⚙️ Installation
 
-Nitro requires **Go 1.25+** (fasthttp 1.73 and pgx 5.10 set the floor).
+Nitro requires **Go 1.26+** (every module of the v2.2 line declares `go 1.26.0`).
 Install or upgrade Go from the [official downloads](https://go.dev/dl/).
 
 ```bash

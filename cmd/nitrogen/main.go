@@ -134,7 +134,7 @@ Usage: nitrogen <command> [flags]
 
 Project:
   new              Create app (--basic | --microservice | --worker | --fleet | default CA)
-                   [--module path] [--services a,b] [--nitro-path dir]
+                   [--module path] [--services a,b] [--broker nats|rabbitmq] [--nitro-path dir]
   install          Add driver (postgresql|mariadb|mysql|sqlserver|sqlite|redis|rabbitmq|minio|auth-jwt|auth-keycloak)
 
 Generators:

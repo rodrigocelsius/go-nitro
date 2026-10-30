@@ -28,6 +28,10 @@ mapfile -t DIRS < <(find . -name go.mod \
 bad=$(for d in "${DIRS[@]}"; do grep -hE 'go-nitro/.*v2 v[0-9]' "$d/go.mod"; done 2>/dev/null | grep -vE " $VERSION( |$)" || true)
 [[ -z "$bad" ]] || { echo "internal requires not at $VERSION:"; echo "$bad"; exit 1; }
 
+# The CLI scaffolds projects that require this release.
+fv=$(sed -nE 's/^const frameworkVersion = "(.*)"$/\1/p' cmd/nitrogen/framework_version.go)
+[[ "$fv" == "$VERSION" ]] || { echo "cmd/nitrogen/framework_version.go is $fv, not $VERSION"; exit 1; }
+
 # Binaries installed with `go install …@version` (no replace allowed in their
 # go.mod) are tagged in a second phase, once the libraries they require exist.
 CLIS=(cmd/nitrogen)

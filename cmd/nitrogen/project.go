@@ -28,6 +28,7 @@ type newOpts struct {
 	name      string
 	services  []string
 	nitroPath string
+	broker    string // fleet: nats (default) | rabbitmq
 }
 
 func parseNewArgs(args []string) (newOpts, bool) {
@@ -64,6 +65,14 @@ func parseNewArgs(args []string) (newOpts, bool) {
 			i++
 		case strings.HasPrefix(args[i], "--services="):
 			o.services = splitCSV(strings.TrimPrefix(args[i], "--services="))
+		case args[i] == "--broker":
+			if i+1 >= len(args) {
+				return o, false
+			}
+			o.broker = args[i+1]
+			i++
+		case strings.HasPrefix(args[i], "--broker="):
+			o.broker = strings.TrimPrefix(args[i], "--broker=")
 		case args[i] == "--nitro-path":
 			if i+1 >= len(args) {
 				return o, false
@@ -101,7 +110,16 @@ func envSkeleton() string {
 	return "PORT=8080\nNITRO_ENV=development\nSERVICE_NAME=app\n"
 }
 
-func workerEnvSkeleton(name string) string {
+// brokerEnv is the worker .env block for a broker: nats (JetStream, the fleet
+// default) or rabbitmq.
+func brokerEnv(broker string) string {
+	if broker == "rabbitmq" {
+		return "RABBITMQ_URL=amqp://guest:guest@127.0.0.1:5672/\nRABBITMQ_EXCHANGE=nitro.events\nRABBITMQ_PREFETCH=5\n"
+	}
+	return "NATS_URL=nats://127.0.0.1:4222\nNATS_RETRY_MAX=3\n"
+}
+
+func workerEnvSkeleton(name, broker string) string {
 	queue, rk := name+"_queue", name
 	if pair, ok := defaultFleetRouting[name]; ok && pair[0] != "" {
 		queue, rk = pair[0], pair[1]
@@ -111,17 +129,14 @@ NITRO_ENV=development
 SERVICE_NAME=%s
 QUEUE_NAME=%s
 ROUTING_KEY=%s
-RABBITMQ_URL=amqp://guest:guest@127.0.0.1:5672/
-RABBITMQ_EXCHANGE=nitro.events
-RABBITMQ_PREFETCH=5
-`, name, queue, rk)
+`, name, queue, rk) + brokerEnv(broker)
 }
 
 func projectTemplates(name, module, tier string) map[string]string {
 	if tier == "basic" {
 		return map[string]string{
 			"main.go":       readTemplate("minimal_main.go.tmpl"),
-			"go.mod":        sprintfTemplate("go.mod.tmpl", module),
+			"go.mod":        sprintfTemplate("go.mod.tmpl", module, frameworkVersion),
 			".gitignore":    readTemplate("gitignore.tmpl"),
 			".dockerignore": readTemplate("dockerignore.tmpl"),
 			"README.md":     sprintfTemplate("readme.md.tmpl", name),
@@ -131,7 +146,7 @@ func projectTemplates(name, module, tier string) map[string]string {
 	}
 
 	if tier == "worker" {
-		return workerTemplates(name, module)
+		return workerTemplates(name, module, "rabbitmq")
 	}
 
 	env := envSkeleton()
@@ -144,7 +159,7 @@ func projectTemplates(name, module, tier string) map[string]string {
 		"internal/usecase/.gitkeep":    "",
 		"internal/repository/.gitkeep": "",
 		"migrations/.gitkeep":          "",
-		"go.mod":                       sprintfTemplate("go.mod.tmpl", module),
+		"go.mod":                       sprintfTemplate("go.mod.tmpl", module, frameworkVersion),
 		".gitignore":                   readTemplate("gitignore.tmpl"),
 		".dockerignore":                readTemplate("dockerignore.tmpl"),
 		"README.md":                    sprintfTemplate("readme.md.tmpl", name),
@@ -162,14 +177,14 @@ func projectTemplates(name, module, tier string) map[string]string {
 	return files
 }
 
-func workerTemplates(name, module string) map[string]string {
-	env := workerEnvSkeleton(name)
+func workerTemplates(name, module, broker string) map[string]string {
+	env := workerEnvSkeleton(name, broker)
 	return map[string]string{
 		"cmd/worker/main.go":            sprintfTemplate("worker_main.go.tmpl", module),
 		"internal/config/config.go":     readTemplate("worker_config.go.tmpl"),
 		"internal/consumer/consumer.go": sprintfTemplate("worker_consumer.go.tmpl", module),
 		"internal/usecase/.gitkeep":     "",
-		"go.mod":                        sprintfTemplate("go.mod.tmpl", module),
+		"go.mod":                        sprintfTemplate("go.mod.tmpl", module, frameworkVersion),
 		".gitignore":                    readTemplate("gitignore.tmpl"),
 		".dockerignore":                 readTemplate("dockerignore.tmpl"),
 		"README.md":                     sprintfTemplate("readme.md.tmpl", name),

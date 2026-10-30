@@ -8,13 +8,8 @@ type Config struct {
 	ServiceName string `env:"SERVICE_NAME" default:"worker"`
 	QueueName   string `env:"QUEUE_NAME" default:"jobs"`
 	RoutingKey  string `env:"ROUTING_KEY" default:"jobs"`
-	RabbitMQ    RabbitConfig
-}
-
-type RabbitConfig struct {
-	URL      string `env:"RABBITMQ_URL" default:"amqp://guest:guest@127.0.0.1:5672/"`
-	Exchange string `env:"RABBITMQ_EXCHANGE" default:"nitro.events"`
-	Prefetch int    `env:"RABBITMQ_PREFETCH" default:"5"`
+	// The broker is read by nitro.QueueFromEnv (NATS_URL, RABBITMQ_URL,
+	// KAFKA_BROKERS, NITRO_QUEUE), not here.
 }
 
 func Load() (Config, error) {
