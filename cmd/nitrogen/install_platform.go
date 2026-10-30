@@ -19,8 +19,19 @@ func writeSQLPlatform() error {
 }
 
 func writeRedisPlatform() error {
-	// Redis L2 is inlined in patchSQLMain (REDIS_ADDR). Ensure main is wired.
+	// The L2 cache is inlined in patchSQLMain (VALKEY_ADDR / REDIS_ADDR).
 	patchSQLMain()
+	const path = "cmd/server/main.go"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	if src, ok := upgradeCacheBlock(string(b)); ok {
+		if err := writeFileFmt(path, []byte(src), 0644); err != nil {
+			return err
+		}
+		fmt.Println("nitrogen: cmd/server/main.go now reads VALKEY_ADDR (REDIS_ADDR still works)")
+	}
 	return nil
 }
 
@@ -159,12 +170,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 
 	sqladapter "github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2"
 	nitro "github.com/rodrigocelsius/go-nitro/pkg/v2"
-	"github.com/redis/go-redis/v9"
 
 	"%[1]s/internal/config"
 	"%[1]s/internal/handler"
@@ -190,22 +198,56 @@ func main() {
 	app.HealthCheck(nitro.NamedHealth("db", func() error {
 		return db.Ping(context.Background())
 	}))
-	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
+%[2]s
+	handler.Register(app)
+
+	nitro.Ok(app.Listen(fmt.Sprintf(":%%d", cfg.Port)))
+}
+`, mod, valkeyCacheBlock)
+	if err := writeFileFmt(path, []byte(body), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "nitrogen: main: %v\n", err)
+		return
+	}
+	fmt.Println("nitrogen: wired cmd/server/main.go (sqladapter.OpenEnv + optional Valkey/Redis)")
+}
+
+// valkeyCacheBlock wires the shared L2 cache when VALKEY_ADDR (or REDIS_ADDR)
+// is set. Valkey and Redis speak the same protocol, so one block serves both.
+const valkeyCacheBlock = `	rdb, err := nitro.ValkeyClientFromEnv()
+	if err != nil {
+		log.Fatalf("cache: %v", err)
+	}
+	if rdb != nil {
+		app.SetCache(nitro.RedisCache(rdb))
+	}`
+
+// legacyRedisBlock is what earlier nitrogen versions wrote into main.go; it
+// reads REDIS_* only.
+const legacyRedisBlock = `	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
 		rdb, _ := strconv.Atoi(os.Getenv("REDIS_DB"))
 		app.SetCache(nitro.RedisCache(redis.NewClient(&redis.Options{
 			Addr:     addr,
 			Password: os.Getenv("REDIS_PASSWORD"),
 			DB:       rdb,
 		})))
-	}
-	handler.Register(app)
+	}`
 
-	nitro.Ok(app.Listen(fmt.Sprintf(":%%d", cfg.Port)))
-}
-`, mod)
-	if err := writeFileFmt(path, []byte(body), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "nitrogen: main: %v\n", err)
-		return
+// upgradeCacheBlock swaps the legacy REDIS_ADDR block for valkeyCacheBlock in
+// an already wired main.go, so `nitrogen install valkey` takes effect there too,
+// and drops the imports only the old block used.
+func upgradeCacheBlock(src string) (string, bool) {
+	if !strings.Contains(src, legacyRedisBlock) {
+		return src, false
 	}
-	fmt.Println("nitrogen: wired cmd/server/main.go (sqladapter.OpenEnv + optional Redis)")
+	src = strings.Replace(src, legacyRedisBlock, valkeyCacheBlock, 1)
+	for _, imp := range []struct{ line, use string }{
+		{"\t\"github.com/redis/go-redis/v9\"\n", "redis."},
+		{"\t\"strconv\"\n", "strconv."},
+		{"\t\"os\"\n", "os."},
+	} {
+		if !strings.Contains(src, imp.use) {
+			src = strings.Replace(src, imp.line, "", 1)
+		}
+	}
+	return src, true
 }

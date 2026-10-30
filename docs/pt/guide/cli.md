@@ -43,6 +43,7 @@ Escreve contrato **consumidor** (inglês): **ORM não especificado ⇒ BLinq**, 
 ```bash
 nitrogen install postgresql   # aliases: postgres, pg
 nitrogen install mysql | mariadb | sqlserver | sqlite
+nitrogen install valkey        # fork BSD-3 do Redis 7.2 (recomendado)
 nitrogen install redis
 nitrogen install rabbitmq
 nitrogen install minio
@@ -54,7 +55,7 @@ Efeitos:
 
 1. Structs em `internal/config` (`DBConfig`, `RedisConfig`, `JWTSecret` / `KeycloakConfig`, …)
 2. `NITRO_DB_DRIVER` + `DB_DSN` / `DATABASE_URL` em `.env` / `.env.example` (SQL); `JWT_SECRET` ou `KEYCLOAK_*` para auth
-3. SQL + Redis L2 opcional no `cmd/server` (`sqladapter.OpenEnv`, `REDIS_ADDR` → `SetCache`); `internal/platform` só para helpers rabbitmq/minio
+3. SQL + Redis L2 opcional no `cmd/server` (`sqladapter.OpenEnv`, `VALKEY_ADDR` ou `REDIS_ADDR` → `nitro.ValkeyClientFromEnv` → `SetCache`); `internal/platform` só para helpers rabbitmq/minio
 4. Serviço em `docker-compose.yml` (sqlite não usa compose)
 5. `replace`s locais no `go.mod` quando há `--nitro-path` / replace de `pkg`
 6. `cmd/server/main.go` com `MigrateUp` + health ping (SQL)

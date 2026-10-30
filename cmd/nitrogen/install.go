@@ -12,7 +12,7 @@ import (
 
 func cmdInstall(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: nitrogen install <postgresql|mariadb|mysql|sqlserver|sqlite|redis|rabbitmq|nats|kafka|minio|auth-jwt|auth-keycloak>")
+		fmt.Fprintln(os.Stderr, "usage: nitrogen install <postgresql|mariadb|mysql|sqlserver|sqlite|valkey|redis|rabbitmq|nats|kafka|minio|auth-jwt|auth-keycloak>")
 		os.Exit(1)
 	}
 	driver := strings.ToLower(args[0])
@@ -29,6 +29,8 @@ func cmdInstall(args []string) {
 		driver = "sqlite"
 	case "redis":
 		driver = "redis"
+	case "valkey":
+		driver = "valkey"
 	case "rabbit", "rabbitmq", "amqp":
 		driver = "rabbitmq"
 	case "nats", "jetstream":
@@ -75,12 +77,12 @@ func cmdInstall(args []string) {
 		if err := ensureLocalNitroReplaces("data/adapter/sql", "data/adapter/pgx", "data/gateway", "blinq"); err != nil {
 			fmt.Fprintf(os.Stderr, "nitrogen: go.mod replace: %v\n", err)
 		}
-		goGetPackages("github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2", "github.com/redis/go-redis/v9")
+		goGetPackages("github.com/rodrigocelsius/go-nitro/data/adapter/sql/v2")
 		patchSQLMain()
-		fmt.Println("nitrogen: wired cmd/server (sqladapter.OpenEnv + optional REDIS_ADDR)")
+		fmt.Println("nitrogen: wired cmd/server (sqladapter.OpenEnv + optional VALKEY_ADDR / REDIS_ADDR)")
 	}
 	switch driver {
-	case "redis":
+	case "redis", "valkey":
 		if err := writeRedisPlatform(); err != nil {
 			fmt.Fprintf(os.Stderr, "nitrogen: platform cache: %v\n", err)
 		}
@@ -166,6 +168,12 @@ func driverEnvVars(driver, pass string) map[string]string {
 			"REDIS_ADDR":     "127.0.0.1:6379",
 			"REDIS_PASSWORD": "",
 			"REDIS_DB":       "0",
+		}
+	case "valkey":
+		return map[string]string{
+			"VALKEY_ADDR":     "127.0.0.1:6379",
+			"VALKEY_PASSWORD": "",
+			"VALKEY_DB":       "0",
 		}
 	case "rabbitmq":
 		// "guest:guest" is RabbitMQ's own well-known default — leaving it
@@ -311,6 +319,8 @@ func configFieldLine(driver string) string {
 		return "\tDB          DBConfig\n"
 	case "redis":
 		return "\tRedis       RedisConfig\n"
+	case "valkey":
+		return "\tValkey      nitro.ValkeyConfig\n"
 	case "rabbitmq":
 		return "\tRabbitMQ    RabbitConfig\n"
 	case "nats":
@@ -330,6 +340,9 @@ func driverConfigMarker(driver string) string {
 		return "type DBConfig struct"
 	case "redis":
 		return "type RedisConfig struct"
+	case "valkey":
+		// nitro.ValkeyConfig lives in the framework; nothing to add here.
+		return "nitro.ValkeyConfig"
 	case "rabbitmq":
 		return "type RabbitConfig struct"
 	case "nats":
@@ -501,6 +514,20 @@ func dockerComposeService(driver, pass string) (name, block, volume string) {
     volumes:
       - redis_data:/data
 `, "redis_data"
+	case "valkey":
+		// Valkey (BSD-3) is the open fork of Redis 7.2; same protocol, same port.
+		return "valkey", `  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+`, "valkey_data"
 	case "rabbitmq":
 		// Matches RABBITMQ_USER/RABBITMQ_PASSWORD written to .env — avoids
 		// shipping the well-known "guest"/"guest" default (vuln.md V-36).

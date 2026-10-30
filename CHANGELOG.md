@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Valkey.** `nitro.ValkeyConfig` / `ValkeyConfigFromEnv` / `NewValkeyClient` / `ValkeyClientFromEnv`, plus `ValkeyCache`, `ValkeySessionStore` and `NewValkeyBreakerStore`. Valkey (BSD-3, the fork of Redis 7.2) speaks RESP, so these run on the go-redis client and the existing Redis adapters; `VALKEY_*` variables fall back to `REDIS_*`. Covered by a live test against `valkey/valkey:8` (`NITRO_TEST_VALKEY_ADDR`).
+- `nitrogen install valkey`: env, docker-compose service (`valkey/valkey:8-alpine` with healthcheck) and `cmd/server` wiring.
+
+### Changed
+- The `cmd/server/main.go` that `nitrogen install` writes wires the L2 cache with `nitro.ValkeyClientFromEnv()` (reads `VALKEY_ADDR`, then `REDIS_ADDR`) instead of an inline go-redis client. `nitrogen install valkey|redis` also upgrades the inline `REDIS_ADDR` block earlier versions wrote. Generated apps need the `pkg/v2` release that ships this (the CLI is tagged after the libraries, so a released `nitrogen` always finds it).
+
 ### Fixed
 - **SSE did not stream.** `SSEHandler` / `SSECreate` wrote events into the buffered fasthttp response, so the client received nothing (not even headers) until the handler returned, and then every event at once. The handler now runs in a body stream writer and each event is flushed as it is sent; a failed `Send` means the client disconnected. Because the SSE handler now runs after the route handler returns, it must not use the request `*Ctx`: copy what it needs first and use `context.WithoutCancel(c.Context())`.
 - `SendRaw` wrote multi-line data as a single `data:` line, which ended the event at the first newline and corrupted the stream. Each line is now its own `data:` line, as the SSE spec requires.

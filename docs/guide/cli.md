@@ -45,6 +45,7 @@ Tx without Docker: [`examples/v1/sql-tx`](../../examples/v1/sql-tx/).
 ```bash
 nitrogen install postgresql   # aliases: postgres, pg
 nitrogen install mysql | mariadb | sqlserver | sqlite
+nitrogen install valkey        # BSD-3 fork of Redis 7.2 (recommended)
 nitrogen install redis
 nitrogen install rabbitmq
 nitrogen install minio

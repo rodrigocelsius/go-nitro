@@ -19,3 +19,26 @@
 - Write paths (PATCH/PUT/DELETE loads, Commands, anything inside `nitro.InTx`) always read from the database, never from a cache, and caches are busted again after `COMMIT` (no pre-transaction rows left behind).
 - No Redis installed? Nothing to configure: the L1 in-process cache is the default. `nitro.MemoryCache(n)` can also be passed to `SetCache` (single replica). `Set` with `ttl <= 0` uses the 5-minute default in both memory and Redis caches.
 - Explicit use: `nitro.CacheRepo(repo, ttl)` (L1), `nitro.L2CacheRepo(repo, cache, "prefix:", ttl)` (shared), `nitro.Remember(cache, key, ttl, fn)`, `nitro.Bust(cache, patterns...)`.
+
+## Valkey
+
+[Valkey](https://valkey.io) is the BSD-3 fork of Redis 7.2 (Redis 7.4+ is
+RSAL/SSPL, Redis 8 adds AGPL). It speaks the same protocol, so every Redis
+adapter takes a Valkey client unchanged:
+
+```go
+rdb, err := nitro.ValkeyClientFromEnv() // VALKEY_ADDR, else REDIS_ADDR; nil when unset
+if err != nil {
+    log.Fatal(err)
+}
+if rdb != nil {
+    app.SetCache(nitro.ValkeyCache(rdb))
+}
+```
+
+`nitro.ValkeyConfig` (`VALKEY_ADDR`, `VALKEY_USERNAME`, `VALKEY_PASSWORD`,
+`VALKEY_DB`, `VALKEY_TLS`, `VALKEY_POOL_SIZE`, `VALKEY_DIAL_TIMEOUT`) falls back
+to the `REDIS_*` names, so moving a deployment needs no env change.
+`ValkeySessionStore` and `NewValkeyBreakerStore` cover sessions and named
+circuit breakers. `nitrogen install valkey` adds the service to
+docker-compose and wires `cmd/server`.
