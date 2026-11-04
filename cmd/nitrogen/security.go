@@ -71,7 +71,7 @@ func testSecurityHeaders(url string) {
 	expected := map[string]string{
 		"X-Content-Type-Options":            "nosniff",
 		"X-Frame-Options":                   "DENY",
-		"X-Xss-Protection":                  "1; mode=block",
+		"X-Xss-Protection":                  "0",
 		"Referrer-Policy":                   "",
 		"Content-Security-Policy":           "",
 		"Strict-Transport-Security":         "",

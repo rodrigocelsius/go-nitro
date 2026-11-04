@@ -459,6 +459,32 @@ Checklist:
 
 Regression tests: `adapters/fasthttp/security_fixes_test.go`, `adapters/auth/jwt/jwt_test.go`.
 
+
+---
+
+## 9. Follow-up audit (2.2.x, 2026-11-04)
+
+Scope: hot path (`adapters/fasthttp`), auth (`adapters/auth/jwt`, `session`), rate limiting, caches, Resource Queries, `ListenAutoTLS`. Method: manual review, CPU profile of the default stack, before/after benchmarks (`benchstat`), `go test -race` on the touched modules and every example, `govulncheck` (14 modules, **0 vulnerabilities**).
+
+| ID | Severity | Finding | Status |
+|----|----------|---------|--------|
+| F-01 | High | JWT refresh rotation was check-then-revoke: concurrent refreshes with one token minted several pairs; a store error during rotation was ignored | ✅ atomic `RevocationConsumer.Consume` (memory, Redis `SET NX`); fail closed |
+| F-02 | High | `app.CORS()` with no origins answered `*` in production (documented as dev-only) | ✅ env-aware (`Config.Security.CORS`) |
+| F-03 | High | Rate limiter: full key table → O(100k) sweep under the global lock per new key (CPU DoS); `MemoryLimiter` unbounded when all keys are live | ✅ sweep ≤ 1/s; hard cap + fail-closed overflow bucket |
+| F-04 | Medium | `ListenAutoTLS` skipped `Err()`; no ACME cache; no `acme-tls/1` ALPN | ✅ |
+| F-05 | Medium | `PageFrom` (Resource Queries) unclamped `page` / `per_page` | ✅ Resource List caps |
+| F-06 | Medium | `Compress` overwrote `Vary: Origin` (shared-cache poisoning of CORS responses) | ✅ Vary merged |
+| F-07 | Medium | Memory session store never purged expired sessions; Redis `Update` could resurrect a logged-out session | ✅ sweep / `SET XX` |
+| F-08 | Low | `Permissions-Policy: none` is invalid (ignored); `X-XSS-Protection: 1; mode=block` discouraged | ✅ real deny list (`SecurityConfig.PermissionsPolicy`); `0` |
+| F-09 | Low | Bounded caches evicted one entry per insert when full (sort / full scans under the lock) | ✅ batch eviction |
+| F-10 | Bug | CORS allowlist rejected origins with a port or `localhost` | ✅ exact match on normalized origin |
+
+Hot-path results (default stack, `adapters/fasthttp/bench_hot_test.go`): `GET /ping` −4.7%, `GET /users/:id` −6.5%, security headers −8.1%, rate limit −3.9% and one allocation less. Key flood on a full rate-limit table: ~834 µs → ~1.2 µs per request.
+
+Not changed (noted): the access logger writes synchronously by default (`LoggerConfig.Async` trades that for dropping lines under back-pressure); WebSocket continuation frames are not reassembled.
+
+Regression tests: `adapters/fasthttp/hardening_test.go`, `adapters/auth/jwt/rotation_test.go`, `adapters/auth/jwt/redisrevocation/redisrevocation_test.go`, `adapters/auth/session/memory_sweep_test.go`, `adapters/ratelimit/bounded_test.go`, `adapters/cache/memory_evict_test.go`, `pkg/resource_query_paging_test.go`, `pkg/middleware_app_test.go`.
+
 ---
 
 *Document produced from manual review + govulncheck + gosec. Critical/High fixes applied in 1.2.1. Does not replace an external pentest.*

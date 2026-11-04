@@ -80,3 +80,29 @@ func TestStore_RevokeAlreadyExpired(t *testing.T) {
 		t.Fatal("expected already-expired revoke to be a no-op")
 	}
 }
+
+func TestStore_ConsumeOnce(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+
+	store := New(client)
+	ctx := context.Background()
+	exp := time.Now().Add(time.Hour)
+	if first, err := store.Consume(ctx, "jti-1", exp); err != nil || !first {
+		t.Fatalf("first consume: first=%v err=%v", first, err)
+	}
+	if first, err := store.Consume(ctx, "jti-1", exp); err != nil || first {
+		t.Fatalf("second consume: first=%v err=%v", first, err)
+	}
+	if revoked, _ := store.Revoked(ctx, "jti-1"); !revoked {
+		t.Fatal("consumed jti must read as revoked")
+	}
+	if first, _ := store.Consume(ctx, "jti-2", time.Now().Add(-time.Second)); first {
+		t.Fatal("an expired token must never be redeemable")
+	}
+}

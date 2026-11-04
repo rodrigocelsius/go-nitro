@@ -215,9 +215,9 @@ Nitro automatically applies these headers in production:
 | `X-Frame-Options` | `DENY` |
 | `Content-Security-Policy` | `default-src 'self'` |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` |
-| `X-XSS-Protection` | `1; mode=block` |
+| `X-XSS-Protection` | `0` (legacy auditor off; CSP protects) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | `none` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` |
 
 ### Custom CSP
 

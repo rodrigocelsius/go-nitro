@@ -175,23 +175,25 @@ func (p *Provider) RefreshToken(ctx context.Context, refreshToken string) (*doma
 		return nil, domain.ErrUnauthorized
 	}
 
-	jti, _ := mapClaims["jti"].(string)
-	if jti != "" && p.isRevoked(ctx, jti) {
-		return nil, domain.ErrUnauthorized
-	}
-
 	userID, _ := mapClaims["sub"].(string)
 	if userID == "" {
 		return nil, domain.ErrUnauthorized
 	}
 
-	// Rotate: revoke old refresh JTI
-	if jti != "" {
+	// Rotate: consume the old refresh JTI. The check and the revoke are one
+	// atomic step, so two concurrent refreshes with the same token cannot
+	// both mint a new pair (replay of a stolen refresh token).
+	if jti, _ := mapClaims["jti"].(string); jti != "" {
 		exp := time.Now().Add(p.refreshTokenTTL)
 		if expClaim, err := mapClaims.GetExpirationTime(); err == nil && expClaim != nil {
 			exp = expClaim.Time
 		}
-		p.revoke(ctx, jti, exp)
+		first, err := p.consume(ctx, jti, exp)
+		if err != nil || !first {
+			// Fail closed: an unreachable store must not leave the old
+			// refresh token usable.
+			return nil, domain.ErrUnauthorized
+		}
 	}
 
 	user := &domain.User{
@@ -237,11 +239,32 @@ func (p *Provider) RevokeToken(ctx context.Context, tokenStr string) error {
 }
 
 func (p *Provider) revoke(ctx context.Context, jti string, exp time.Time) {
-	_ = p.store.Revoke(ctx, jti, exp)
+	_ = p.revocationStore().Revoke(ctx, jti, exp)
+}
+
+// consume revokes jti and reports whether this call was the first to do so.
+// Stores implementing RevocationConsumer do it atomically; for the others it
+// falls back to check-then-revoke.
+func (p *Provider) consume(ctx context.Context, jti string, exp time.Time) (bool, error) {
+	store := p.revocationStore()
+	if c, ok := store.(RevocationConsumer); ok {
+		return c.Consume(ctx, jti, exp)
+	}
+	revoked, err := store.Revoked(ctx, jti)
+	if err != nil || revoked {
+		return false, err
+	}
+	return true, store.Revoke(ctx, jti, exp)
+}
+
+func (p *Provider) revocationStore() RevocationStore {
+	p.storeMu.Lock()
+	defer p.storeMu.Unlock()
+	return p.store
 }
 
 func (p *Provider) isRevoked(ctx context.Context, jti string) bool {
-	revoked, err := p.store.Revoked(ctx, jti)
+	revoked, err := p.revocationStore().Revoked(ctx, jti)
 	if err != nil {
 		// Fail closed: an unreachable revocation store must not silently
 		// accept revoked tokens.

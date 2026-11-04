@@ -50,6 +50,20 @@ func (s *Store) Revoke(ctx context.Context, jti string, exp time.Time) error {
 }
 
 // Revoked reports whether jti is currently revoked.
+// Consume atomically revokes jti (SET NX) and reports whether it was not
+// revoked before — used by jwt.Provider for refresh-token rotation, so a
+// refresh token can be redeemed only once across every replica.
+func (s *Store) Consume(ctx context.Context, jti string, exp time.Time) (bool, error) {
+	if jti == "" {
+		return true, nil
+	}
+	ttl := time.Until(exp)
+	if ttl <= 0 {
+		return false, nil // already expired: never redeemable
+	}
+	return s.client.SetNX(ctx, s.key(jti), "1", ttl).Result()
+}
+
 func (s *Store) Revoked(ctx context.Context, jti string) (bool, error) {
 	if jti == "" {
 		return false, nil

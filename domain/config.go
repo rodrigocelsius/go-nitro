@@ -40,6 +40,11 @@ type SecurityConfig struct {
 	// If empty, the restrictive default is used: "default-src 'self'".
 	CSP string
 
+	// PermissionsPolicy customizes the Permissions-Policy header. If empty,
+	// camera, microphone, geolocation, payment and usb are denied to every
+	// origin: "camera=(), microphone=(), geolocation=(), payment=(), usb=()".
+	PermissionsPolicy string
+
 	// CORS configures Cross-Origin Resource Sharing. By default
 	// (CORSConfig{}), NO cross-origin origin is allowed.
 	CORS CORSConfig

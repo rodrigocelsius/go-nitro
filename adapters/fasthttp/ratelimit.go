@@ -12,23 +12,38 @@ import (
 // RateLimitMiddleware returns middleware that rate-limits requests
 // and includes X-RateLimit-* headers on the response.
 func RateLimitMiddleware(limiter domain.RateLimiter, max int, keyFunc func(*domain.Ctx) string) domain.Handler {
+	limit := strconv.Itoa(max)
+	combined, _ := limiter.(allowRemainer)
 	return func(c *domain.Ctx) error {
 		key := keyFunc(c)
 
-		if !limiter.Allow(key) {
+		var allowed bool
+		var remaining int
+		if combined != nil {
+			allowed, remaining = combined.AllowRemaining(key)
+		} else if allowed = limiter.Allow(key); allowed {
+			remaining = limiter.Remaining(key)
+		}
+
+		if !allowed {
 			fc, _ := c.AdapterData.(*FastCtx)
 			if fc != nil {
-				fc.SetHeader("X-RateLimit-Limit", strconv.Itoa(max))
+				fc.SetHeader("X-RateLimit-Limit", limit)
 				fc.SetHeader("X-RateLimit-Remaining", "0")
 			}
 			return &domain.TooManyRequestsError{}
 		}
 
-		remaining := limiter.Remaining(key)
-		c.SetHeader("X-RateLimit-Limit", strconv.Itoa(max))
+		c.SetHeader("X-RateLimit-Limit", limit)
 		c.SetHeader("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		return nil
 	}
+}
+
+// allowRemainer is implemented by limiters that can answer Allow and
+// Remaining with a single key lookup (one lock round-trip per request).
+type allowRemainer interface {
+	AllowRemaining(key string) (bool, int)
 }
 
 // DefaultKeyFunc returns the default rate-limit key: the real client IP

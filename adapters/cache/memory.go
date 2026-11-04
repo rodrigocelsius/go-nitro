@@ -2,6 +2,7 @@ package cache
 
 import (
 	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 
@@ -71,11 +72,16 @@ func (c *MemoryCache) Set(key string, value any, ttl time.Duration) error {
 	defer c.mu.Unlock()
 
 	c.sets++
-	if c.sets >= sweepEvery || (c.max > 0 && len(c.items) >= c.max) {
+	if c.sets >= sweepEvery {
 		c.sweepExpired()
 	}
 	if _, exists := c.items[key]; !exists && c.max > 0 && len(c.items) >= c.max {
-		c.evictOldest()
+		c.sweepExpired()
+		if len(c.items) >= c.max {
+			// Free a batch (1/16 of the cap), not one slot: evicting a single
+			// entry made every insert into a full cache two O(n) scans.
+			c.evictOldest(max(1, c.max/16))
+		}
 	}
 
 	c.items[key] = cacheItem{
@@ -125,19 +131,33 @@ func (c *MemoryCache) sweepExpired() {
 	}
 }
 
-func (c *MemoryCache) evictOldest() {
-	var oldestKey string
-	var oldestTime time.Time
-
-	for key, item := range c.items {
-		if oldestKey == "" || item.ExpiresAt.Before(oldestTime) {
-			oldestKey = key
-			oldestTime = item.ExpiresAt
+// evictOldest drops the n entries closest to expiry (caller holds c.mu).
+func (c *MemoryCache) evictOldest(n int) {
+	if n <= 1 {
+		var oldestKey string
+		var oldestTime time.Time
+		for key, item := range c.items {
+			if oldestKey == "" || item.ExpiresAt.Before(oldestTime) {
+				oldestKey = key
+				oldestTime = item.ExpiresAt
+			}
 		}
+		if oldestKey != "" {
+			delete(c.items, oldestKey)
+		}
+		return
 	}
-
-	if oldestKey != "" {
-		delete(c.items, oldestKey)
+	type kv struct {
+		key string
+		exp time.Time
+	}
+	all := make([]kv, 0, len(c.items))
+	for k, it := range c.items {
+		all = append(all, kv{k, it.ExpiresAt})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].exp.Before(all[j].exp) })
+	for i := 0; i < n && i < len(all); i++ {
+		delete(c.items, all[i].key)
 	}
 }
 

@@ -11,7 +11,13 @@ import (
 type MemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*domain.Session
+	creates  int // Create calls since the last expired-session sweep
 }
+
+// memorySweepEvery bounds memory: expired sessions that are never read again
+// (the user just left) are purged every memorySweepEvery creates. Without it
+// every login leaked one entry for the life of the process.
+const memorySweepEvery = 1024
 
 // NewMemory creates a new in-memory session store.
 func NewMemory() domain.SessionStore {
@@ -24,6 +30,15 @@ func (s *MemoryStore) Create(ctx context.Context, sess *domain.Session) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.creates++; s.creates >= memorySweepEvery {
+		s.creates = 0
+		now := time.Now()
+		for id, old := range s.sessions {
+			if now.After(old.ExpiresAt) {
+				delete(s.sessions, id)
+			}
+		}
+	}
 	s.sessions[sess.ID] = sess
 	return nil
 }

@@ -44,7 +44,11 @@ func mountBusinessRoutes(
 
 func makeQueryHandler(q ResourceQuery, cfg *ResourceConfig) Handler {
 	return func(c *Ctx) error {
-		page := PageFrom(c, defaultPerPage(cfg))
+		var maxPer, maxPage int
+		if cfg != nil {
+			maxPer, maxPage = cfg.MaxPerPage, cfg.MaxPage
+		}
+		page := pageFrom(c, defaultPerPage(cfg), maxPer, maxPage)
 		results, err := callHandler(c, q.fn, []reflect.Value{
 			reflect.ValueOf(c.Context()),
 			reflect.ValueOf(page),

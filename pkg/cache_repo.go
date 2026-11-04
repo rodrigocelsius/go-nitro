@@ -287,7 +287,10 @@ func (r *cachedRepo) sweepLocked() {
 		live = append(live, kv{k, e.expiresAt})
 	}
 	sort.Slice(live, func(i, j int) bool { return live[i].exp.Before(live[j].exp) })
-	excess := len(live) - r.maxEntries
+	// Evict down to 7/8 of the cap, not just to the cap: evicting a single
+	// entry meant a full sort on every store once the cache was full (one
+	// per unique ?filter combination — attacker-controlled).
+	excess := len(live) - r.maxEntries*7/8
 	for i := 0; i < excess; i++ {
 		delete(r.items, live[i].key)
 	}

@@ -7,10 +7,7 @@ import (
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
-var (
-	acceptEncHeader = []byte("Accept-Encoding")
-	varyHeader      = []byte("Vary")
-)
+var acceptEncHeader = []byte("Accept-Encoding")
 
 type gzipWriter struct {
 	buf []byte
@@ -61,7 +58,7 @@ func CompressMiddleware(cfg ...CompressConfig) domain.Handler {
 			return nil
 		}
 
-		fctx.Response.Header.SetCanonical(varyHeader, acceptEncHeader)
+		appendVary(&fctx.Response.Header, acceptEncHeader)
 
 		gw := gzipPool.Get().(*gzipWriter)
 		var buf []byte

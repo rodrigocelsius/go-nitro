@@ -1,6 +1,10 @@
 package nitro
 
-import "reflect"
+import (
+	"reflect"
+
+	"github.com/rodrigocelsius/go-nitro/usecases/v2"
+)
 
 // Page holds pagination from ?page= and ?per_page= (defaults 1 and 20).
 type Page struct {
@@ -9,18 +13,44 @@ type Page struct {
 }
 
 // PageFrom reads pagination query params from the request context.
+// Values are clamped like Resource List: page to 1..DefaultListMaxPage,
+// per_page to 1..max(DefaultListMaxPerPage, defaultPerPage), so a client
+// cannot ask for a negative offset or an unbounded result set.
 func PageFrom(c *Ctx, defaultPerPage int) Page {
+	return pageFrom(c, defaultPerPage, 0, 0)
+}
+
+// pageFrom is PageFrom with explicit caps (0 = framework default).
+func pageFrom(c *Ctx, defaultPerPage, maxPerPage, maxPage int) Page {
 	if defaultPerPage <= 0 {
 		defaultPerPage = DefaultListPerPage
 	}
-	return Page{
+	if maxPerPage <= 0 {
+		maxPerPage = max(DefaultListMaxPerPage, defaultPerPage)
+	}
+	if maxPage <= 0 {
+		maxPage = DefaultListMaxPage
+	}
+	p := Page{
 		Number:  c.QueryIntDefault("page", 1),
 		PerPage: c.QueryIntDefault("per_page", defaultPerPage),
 	}
+	p.Number = min(max(p.Number, 1), maxPage)
+	if p.PerPage < 1 {
+		p.PerPage = defaultPerPage
+	}
+	p.PerPage = min(p.PerPage, maxPerPage)
+	return p
 }
 
 // DefaultListPerPage is the default page size for PageFrom and Resource list.
 const DefaultListPerPage = 20
+
+// Pagination caps shared by PageFrom and Resource list (anti-DoS).
+const (
+	DefaultListMaxPerPage = usecases.DefaultListMaxPerPage
+	DefaultListMaxPage    = usecases.DefaultListMaxPage
+)
 
 // ResourceRule validates an entity before a resource Command runs.
 type ResourceRule struct {

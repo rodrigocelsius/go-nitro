@@ -140,9 +140,9 @@ func (ws *wsConn) writeCloseFrame() {
 }
 
 func (ws *wsConn) readFrame() (opcode int, payload []byte, err error) {
-	// Read first 2 bytes
-	header := make([]byte, 2)
-	if _, err = io.ReadFull(ws.br, header); err != nil {
+	// Read first 2 bytes (stack buffers: this runs once per frame)
+	var header [2]byte
+	if _, err = io.ReadFull(ws.br, header[:]); err != nil {
 		return 0, nil, err
 	}
 
@@ -153,17 +153,17 @@ func (ws *wsConn) readFrame() (opcode int, payload []byte, err error) {
 	// Extended payload length
 	switch length {
 	case 126:
-		ext := make([]byte, 2)
-		if _, err = io.ReadFull(ws.br, ext); err != nil {
+		var ext [2]byte
+		if _, err = io.ReadFull(ws.br, ext[:]); err != nil {
 			return 0, nil, err
 		}
-		length = int64(binary.BigEndian.Uint16(ext))
+		length = int64(binary.BigEndian.Uint16(ext[:]))
 	case 127:
-		ext := make([]byte, 8)
-		if _, err = io.ReadFull(ws.br, ext); err != nil {
+		var ext [8]byte
+		if _, err = io.ReadFull(ws.br, ext[:]); err != nil {
 			return 0, nil, err
 		}
-		u := binary.BigEndian.Uint64(ext)
+		u := binary.BigEndian.Uint64(ext[:])
 		if u > uint64(ws.limit()) { // also rejects values with the high bit set
 			ws.failClose(wsCloseTooBig)
 			return 0, nil, ErrWSMessageTooBig
@@ -216,27 +216,43 @@ func (ws *wsConn) writeFrame(opcode int, payload []byte) error {
 		return ErrCloseSent
 	}
 
-	// FIN + opcode
-	frame := []byte{byte(0x80 | opcode)}
-
-	// Payload length
+	// FIN + opcode, then the payload length (header on the stack).
+	var hdr [10]byte
+	hdr[0] = byte(0x80 | opcode)
+	n := 2
 	length := len(payload)
 	switch {
 	case length <= 125:
-		frame = append(frame, byte(length))
+		hdr[1] = byte(length)
 	case length <= 65535:
-		frame = append(frame, 126)
-		frame = binary.BigEndian.AppendUint16(frame, uint16(length))
+		hdr[1] = 126
+		binary.BigEndian.PutUint16(hdr[2:], uint16(length))
+		n = 4
 	default:
-		frame = append(frame, 127)
-		frame = binary.BigEndian.AppendUint64(frame, uint64(length))
+		hdr[1] = 127
+		binary.BigEndian.PutUint64(hdr[2:], uint64(length))
+		n = 10
 	}
 
-	frame = append(frame, payload...)
-
+	if length > wsCopyThreshold {
+		// Large payload: header + payload without copying it (writev when
+		// the conn supports it, two writes otherwise).
+		bufs := net.Buffers{hdr[:n], payload}
+		_, err := bufs.WriteTo(ws.conn)
+		return err
+	}
+	// Small payload: one exactly-sized buffer, one write.
+	frame := make([]byte, n+length)
+	copy(frame, hdr[:n])
+	copy(frame[n:], payload)
 	_, err := ws.conn.Write(frame)
 	return err
 }
+
+// wsCopyThreshold is the payload size above which writeFrame stops copying
+// the payload into a single frame buffer (a copy is cheaper than a second
+// write syscall for small messages).
+const wsCopyThreshold = 16 << 10
 
 // upgradeWebSocket performs the WebSocket handshake and hijacks the connection,
 // calling the callback with the WebSocket connection after hijack succeeds.

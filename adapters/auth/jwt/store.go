@@ -34,14 +34,28 @@ type RevocationStore interface {
 	Revoked(ctx context.Context, jti string) (bool, error)
 }
 
+// RevocationConsumer is an optional RevocationStore extension used for
+// refresh-token rotation. Consume atomically marks jti as revoked until exp
+// and reports whether it was not revoked before, so exactly one of several
+// concurrent refreshes with the same token succeeds. Stores without it fall
+// back to Revoked + Revoke, which leaves a small race window.
+type RevocationConsumer interface {
+	Consume(ctx context.Context, jti string, exp time.Time) (first bool, err error)
+}
+
+// memorySweepInterval bounds how often expired JTIs are purged. Purging on
+// every Revoke made each logout/refresh an O(n) scan under the lock.
+const memorySweepInterval = time.Minute
+
 // memoryStore is the default in-process RevocationStore.
 type memoryStore struct {
-	mu      sync.Mutex
-	revoked map[string]time.Time // jti -> expiry
+	mu        sync.Mutex
+	revoked   map[string]time.Time // jti -> expiry
+	lastSweep time.Time
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{revoked: make(map[string]time.Time)}
+	return &memoryStore{revoked: make(map[string]time.Time), lastSweep: time.Now()}
 }
 
 func (m *memoryStore) Revoke(_ context.Context, jti string, exp time.Time) error {
@@ -50,14 +64,37 @@ func (m *memoryStore) Revoke(_ context.Context, jti string, exp time.Time) error
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweepLocked(time.Now())
+	m.revoked[jti] = exp
+	return nil
+}
+
+func (m *memoryStore) Consume(_ context.Context, jti string, exp time.Time) (bool, error) {
+	if jti == "" {
+		return true, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	now := time.Now()
+	m.sweepLocked(now)
+	if cur, ok := m.revoked[jti]; ok && !cur.Before(now) {
+		return false, nil
+	}
+	m.revoked[jti] = exp
+	return true, nil
+}
+
+// sweepLocked purges expired entries at most once per memorySweepInterval.
+func (m *memoryStore) sweepLocked(now time.Time) {
+	if now.Sub(m.lastSweep) < memorySweepInterval {
+		return
+	}
+	m.lastSweep = now
 	for k, v := range m.revoked {
 		if v.Before(now) {
 			delete(m.revoked, k)
 		}
 	}
-	m.revoked[jti] = exp
-	return nil
 }
 
 func (m *memoryStore) Revoked(_ context.Context, jti string) (bool, error) {

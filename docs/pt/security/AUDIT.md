@@ -461,6 +461,32 @@ Checklist:
 
 Testes de regressão: `adapters/fasthttp/security_fixes_test.go`, `adapters/auth/jwt/jwt_test.go`.
 
+
+---
+
+## 9. Auditoria de acompanhamento (2.2.x, 2026-11-04)
+
+Escopo: caminho quente (`adapters/fasthttp`), autenticação (`adapters/auth/jwt`, `session`), rate limiting, caches, Queries de Resource, `ListenAutoTLS`. Método: revisão manual, profile de CPU do stack padrão, benchmarks antes/depois (`benchstat`), `go test -race` nos módulos alterados e em todos os exemplos, `govulncheck` (14 módulos, **0 vulnerabilidades**).
+
+| ID | Severidade | Achado | Status |
+|----|------------|--------|--------|
+| F-01 | Alta | Rotação do refresh JWT era verificar-depois-revogar: refreshes concorrentes com o mesmo token geravam vários pares; erro do store na rotação era ignorado | ✅ `RevocationConsumer.Consume` atômico (memória, Redis `SET NX`); fail closed |
+| F-02 | Alta | `app.CORS()` sem origens respondia `*` em produção (documentado como só dev) | ✅ ciente do ambiente (`Config.Security.CORS`) |
+| F-03 | Alta | Rate limiter: tabela de chaves cheia → varredura O(100k) sob lock global a cada chave nova (DoS de CPU); `MemoryLimiter` sem limite com todas as chaves ativas | ✅ varredura ≤ 1/s; teto rígido + bucket de overflow fail-closed |
+| F-04 | Média | `ListenAutoTLS` pulava `Err()`; sem cache ACME; sem ALPN `acme-tls/1` | ✅ |
+| F-05 | Média | `PageFrom` (Queries de Resource) sem limite em `page` / `per_page` | ✅ limites do List de Resource |
+| F-06 | Média | `Compress` sobrescrevia `Vary: Origin` (envenenamento de cache compartilhado em respostas CORS) | ✅ Vary mesclado |
+| F-07 | Média | Store de sessão em memória nunca removia sessões expiradas; `Update` no Redis podia ressuscitar sessão após logout | ✅ varredura / `SET XX` |
+| F-08 | Baixa | `Permissions-Policy: none` é inválido (ignorado); `X-XSS-Protection: 1; mode=block` desaconselhado | ✅ lista de negação real (`SecurityConfig.PermissionsPolicy`); `0` |
+| F-09 | Baixa | Caches limitados removiam uma entrada por inserção quando cheios (sort / varreduras completas sob lock) | ✅ evicção em lote |
+| F-10 | Bug | Allowlist CORS rejeitava origens com porta ou `localhost` | ✅ match exato na origem normalizada |
+
+Resultados no caminho quente (stack padrão, `adapters/fasthttp/bench_hot_test.go`): `GET /ping` −4,7%, `GET /users/:id` −6,5%, headers de segurança −8,1%, rate limit −3,9% e uma alocação a menos. Flood de chaves com a tabela do rate limit cheia: ~834 µs → ~1,2 µs por request.
+
+Não alterado (registrado): o logger de acesso escreve de forma síncrona por padrão (`LoggerConfig.Async` troca isso por descartar linhas sob pressão); frames de continuação de WebSocket não são remontados.
+
+Testes de regressão: `adapters/fasthttp/hardening_test.go`, `adapters/auth/jwt/rotation_test.go`, `adapters/auth/jwt/redisrevocation/redisrevocation_test.go`, `adapters/auth/session/memory_sweep_test.go`, `adapters/ratelimit/bounded_test.go`, `adapters/cache/memory_evict_test.go`, `pkg/resource_query_paging_test.go`, `pkg/middleware_app_test.go`.
+
 ---
 
 *Documento gerado a partir de revisão manual + govulncheck + gosec. Correções Critical/High aplicadas em 1.2.1. Não substitui pentest externo.*

@@ -287,7 +287,13 @@ func PrometheusHandler(mc *MetricsCollector) Handler {
 //
 //	app.CORS(nitro.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}})
 func (a *App) CORS(cfg ...CORSConfig) *App {
-	return a.Use(CORSMiddleware(cfg...))
+	c := a.cfg.Security.CORS
+	if len(cfg) > 0 {
+		c = cfg[0]
+	}
+	// Env-aware: with no AllowedOrigins this used to answer "*" in
+	// production too, contrary to the documented convention.
+	return a.Use(wrapAdapter(nitroadapter.CORSMiddlewareWithEnv(c, a.cfg.Env)))
 }
 
 // Compress enables gzip compression for the whole app (chainable). It is

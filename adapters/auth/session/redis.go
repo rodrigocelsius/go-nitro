@@ -119,15 +119,6 @@ func (s *RedisStore) Get(ctx context.Context, id string) (*domain.Session, error
 }
 
 func (s *RedisStore) Update(ctx context.Context, sess *domain.Session) error {
-	// Check if session exists first
-	exists, err := s.client.Exists(ctx, s.key(sess.ID)).Result()
-	if err != nil {
-		return fmt.Errorf("session: exists check: %w", err)
-	}
-	if exists == 0 {
-		return domain.ErrNotFound
-	}
-
 	data := sessionData{
 		ID:        sess.ID,
 		UserID:    sess.UserID,
@@ -147,11 +138,16 @@ func (s *RedisStore) Update(ctx context.Context, sess *domain.Session) error {
 		return fmt.Errorf("session: session is already expired")
 	}
 
-	err = s.client.Set(ctx, s.key(sess.ID), jsonBytes, ttl).Err()
+	// SET XX writes only if the key still exists, in one round-trip. The old
+	// EXISTS + SET pair could resurrect a session deleted (logout) between
+	// the two commands.
+	updated, err := s.client.SetXX(ctx, s.key(sess.ID), jsonBytes, ttl).Result()
 	if err != nil {
 		return fmt.Errorf("session: update: %w", err)
 	}
-
+	if !updated {
+		return domain.ErrNotFound
+	}
 	return nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 	"github.com/rodrigocelsius/go-nitro/usecases/v2"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -570,26 +571,46 @@ func (a *App) ListenTLS(addr, certFile, keyFile string) error {
 // ListenAutoTLS starts the HTTPS server with automatic certificates
 // via Let's Encrypt (ACME). The domain parameter selects which hosts
 // the certificate will cover.
+//
+// Certificates are cached in the directory named by NITRO_AUTOCERT_DIR
+// (default "./.autocert", created 0700): without a cache every restart
+// requested new certificates and quickly hit Let's Encrypt rate limits.
 func (a *App) ListenAutoTLS(addr string, domain ...string) error {
 	if len(domain) == 0 {
 		return a.ListenTLS(addr, "", "")
+	}
+	if err := a.Err(); err != nil {
+		return err
 	}
 	if err := a.fireOnListen(addr); err != nil {
 		return err
 	}
 
 	m := &autocert.Manager{
-		Prompt: autocert.AcceptTOS,
-	}
-	if len(domain) > 0 {
-		m.HostPolicy = autocert.HostWhitelist(domain...)
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domain...),
+		Cache:      autocert.DirCache(autocertDir()),
 	}
 
 	srv := a.newServer()
+	// The "acme-tls/1" ALPN protocol is required by the TLS-ALPN-01 challenge
+	// (the only one reachable on a TLS-only listener); without it no
+	// certificate is ever issued. No "h2": fasthttp speaks HTTP/1.1 only.
 	srv.TLSConfig = &tls.Config{
 		GetCertificate: m.GetCertificate,
+		NextProtos:     []string{"http/1.1", acme.ALPNProto},
+		MinVersion:     tls.VersionTLS12,
 	}
+	a.printStartupBanner(addr, true)
 	return srv.ListenAndServeTLS(addr, "", "")
+}
+
+// autocertDir is where ListenAutoTLS caches ACME certificates.
+func autocertDir() string {
+	if d := strings.TrimSpace(os.Getenv("NITRO_AUTOCERT_DIR")); d != "" {
+		return d
+	}
+	return ".autocert"
 }
 
 // EnableTLS applies an explicit TLS config to the server.

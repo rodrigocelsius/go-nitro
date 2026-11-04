@@ -874,10 +874,10 @@ func (c *FastCtx) RemoteIP() string {
 // the left side is attacker-controlled and the first untrusted entry from the
 // right is the real client.
 func (c *FastCtx) ClientIP() string {
-	remote := c.RemoteIP()
+	peer := c.FasthttpCtx().RemoteIP()
 	ts := c.trust()
-	if !ts.contains(net.ParseIP(remote)) {
-		return remote
+	if !ts.contains(peer) {
+		return peer.String()
 	}
 	if xff := c.Header("X-Forwarded-For"); xff != "" {
 		if ip := rightmostUntrustedIP(xff, ts.nets, nil); ip != "" {
@@ -887,7 +887,7 @@ func (c *FastCtx) ClientIP() string {
 	if xri := strings.TrimSpace(c.Header("X-Real-IP")); xri != "" && net.ParseIP(xri) != nil {
 		return xri
 	}
-	return remote
+	return peer.String()
 }
 
 // Protocol returns the request protocol (http or https).
@@ -897,7 +897,7 @@ func (c *FastCtx) Protocol() string {
 	if c.FasthttpCtx().IsTLS() {
 		return "https"
 	}
-	if c.peerMaySetForwardedHeaders(c.RemoteIP()) {
+	if c.trust().contains(c.FasthttpCtx().RemoteIP()) {
 		switch strings.ToLower(strings.TrimSpace(c.Header("X-Forwarded-Proto"))) {
 		case "https":
 			return "https"

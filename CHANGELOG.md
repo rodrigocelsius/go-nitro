@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **JWT refresh-token replay.** `RefreshToken` checked and revoked the old JTI in two steps, so concurrent refreshes with one token all minted new pairs. Rotation is now an atomic consume (new optional `jwt.RevocationConsumer`, implemented by the in-memory store and by `redisrevocation` via `SET NX`), and a store error during rotation rejects the refresh instead of being ignored. Reads of the revocation store no longer race with `SetRevocationStore`.
+- **`app.CORS()` answered `*` in production.** With no `AllowedOrigins` it ignored the environment, contrary to the documented convention; it now uses `Config.Security.CORS` and is permissive only in development. `nitro.CORSMiddleware()` with no origins still allows any origin (it does not know the environment).
+- **CORS `Vary`.** `Compress` overwrote `Vary: Origin`, so a shared cache could serve one origin's `Access-Control-Allow-Origin` to another. Vary tokens are now merged. Denied origins get no `Access-Control-Allow-*` headers at all (an empty `Access-Control-Allow-Origin` used to be sent).
+- **Rate limiter under a key flood.** With the per-key table full of live keys (many distinct IPs or API keys), every new key rescanned up to 100k entries under the global lock (~834 µs → ~1.2 µs per request). The full-table sweep now runs at most once per second. `ratelimit.MemoryLimiter` also had no hard cap when every bucket was live; past 131,072 keys new keys share one fail-closed overflow bucket.
+- **Resource Queries pagination.** `PageFrom` (the `nitro.Page` passed to `/queries/{name}`) passed `?page` / `?per_page` through unclamped: unbounded pages and negative offsets. It now applies the Resource List caps (`MaxPerPage`, `MaxPage`; defaults 100 / 10,000).
+- **Sessions.** `MemorySessionStore` never dropped expired sessions (one leaked entry per login); they are swept every 1024 creates. `RedisSessionStore.Update` used `EXISTS` + `SET`, which could resurrect a session deleted by a concurrent logout; it is now a single `SET XX`.
+- **`ListenAutoTLS`.** It skipped `Err()`, so configuration errors (e.g. unprotected Resources in production) did not stop the boot. It also had no certificate cache (every restart re-issued certificates and hit Let's Encrypt rate limits) and did not advertise the `acme-tls/1` ALPN protocol, so the TLS-ALPN-01 challenge could not complete. Certificates are cached in `NITRO_AUTOCERT_DIR` (default `./.autocert`, added to the generated `.gitignore`), ALPN is `http/1.1` + `acme-tls/1`, minimum TLS 1.2.
+- **Security headers.** `Permissions-Policy: none` is not valid syntax, so browsers ignored it; the default now denies camera, microphone, geolocation, payment and usb (`SecurityConfig.PermissionsPolicy` overrides it). `X-XSS-Protection` is `0` instead of `1; mode=block`, which could be abused for cross-site leaks (OWASP recommendation).
+
+### Performance
+- Request ID: a byte loop replaces the per-request regexp, and the response header is written with a pre-canonical key.
+- `ClientIP` / `Protocol` no longer format the peer IP and parse it back on every call.
+- CORS: no `url.Parse` per request; header values are built once.
+- Rate limit middleware: one key lookup per request instead of two (one allocation less).
+- Resource L1 cache and bounded `MemoryCache`: a full cache evicts a batch instead of a single entry, so an insert no longer costs a sort / two full scans under the lock. The JWT in-memory revocation store purges expired JTIs once a minute instead of on every revoke.
+- WebSocket: frame headers are read into stack buffers, and large payloads are written without copying them into a new frame.
+
+### Fixed
+- CORS allowlists never matched origins with a port or a single-label host (`http://localhost:3000`, `https://app.example.com:8443`, `http://localhost`): an origin validator rejected them before the lookup. Matching is now exact on the normalized origin (case and trailing slash).
+
 ### Changed
 - `nitrogen new --fleet` runs **NATS JetStream** (Apache-2.0) and **Valkey** (BSD-3) instead of RabbitMQ and Redis 7 by default. `--broker rabbitmq` keeps the previous broker.
 - Generated workers pick the broker with `nitro.QueueFromEnv()` (`NATS_URL`, `RABBITMQ_URL`, `KAFKA_BROKERS`, `NITRO_QUEUE`) instead of a hard-wired `NewRabbitQueue`; their config no longer carries a `RabbitMQ` block. A standalone `nitrogen new --worker` still writes `RABBITMQ_*` to `.env`.

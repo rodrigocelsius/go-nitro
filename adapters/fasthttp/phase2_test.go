@@ -34,9 +34,9 @@ func TestSecurityHeaders_AllPresent(t *testing.T) {
 		{"X-Frame-Options", "DENY"},
 		{"Referrer-Policy", "strict-origin-when-cross-origin"},
 		{"Content-Security-Policy", "default-src 'self'"},
-		{"X-XSS-Protection", "1; mode=block"},
+		{"X-XSS-Protection", "0"},
 		{"X-Permitted-Cross-Domain-Policies", "none"},
-		{"Permissions-Policy", "none"},
+		{"Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"},
 	}
 
 	for _, tt := range tests {

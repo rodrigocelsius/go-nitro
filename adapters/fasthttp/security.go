@@ -4,6 +4,11 @@ import "github.com/rodrigocelsius/go-nitro/domain/v2"
 
 const defaultCSP = "default-src 'self'"
 
+// defaultPermissionsPolicy denies powerful browser features to every origin.
+// The old value "none" is not valid Permissions-Policy syntax, so browsers
+// ignored the header and nothing was restricted.
+const defaultPermissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
 var (
 	headerXContentTypeOptions = []byte("X-Content-Type-Options")
 	headerXFrameOptions       = []byte("X-Frame-Options")
@@ -18,8 +23,11 @@ var (
 	valueDeny     = []byte("DENY")
 	valueReferrer = []byte("strict-origin-when-cross-origin")
 	valueHSTS     = []byte("max-age=31536000; includeSubDomains; preload")
-	valueXXSS     = []byte("1; mode=block")
-	valueNone     = []byte("none")
+	// "0" disables the legacy XSS auditor: "1; mode=block" could be abused
+	// for cross-site leaks and is no longer recommended (OWASP); CSP is the
+	// real protection.
+	valueXXSS = []byte("0")
+	valueNone = []byte("none")
 )
 
 // securityHeadersMiddleware returns a domain.Handler that writes default
@@ -31,6 +39,10 @@ func securityHeadersMiddleware(cfg domain.SecurityConfig, env domain.Env) domain
 	if cfg.CSP != "" {
 		csp = []byte(cfg.CSP)
 	}
+	permissions := []byte(defaultPermissionsPolicy)
+	if cfg.PermissionsPolicy != "" {
+		permissions = []byte(cfg.PermissionsPolicy)
+	}
 
 	return func(c *domain.Ctx) error {
 		fctx := c.AdapterData.(*FastCtx).FasthttpCtx()
@@ -41,7 +53,7 @@ func securityHeadersMiddleware(cfg domain.SecurityConfig, env domain.Env) domain
 		h.SetCanonical(headerCSP, csp)
 		h.SetCanonical(headerXXSSProtection, valueXXSS)
 		h.SetCanonical(headerXPermittedCross, valueNone)
-		h.SetCanonical(headerPermissionsPolicy, valueNone)
+		h.SetCanonical(headerPermissionsPolicy, permissions)
 		if hstsEnabled {
 			h.SetCanonical(headerHSTS, valueHSTS)
 		}

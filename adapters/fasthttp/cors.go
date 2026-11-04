@@ -1,8 +1,7 @@
 package fasthttp
 
 import (
-	"net"
-	"net/url"
+	"bytes"
 	"strconv"
 	"strings"
 
@@ -23,15 +22,21 @@ var (
 	corsHeaderRequestHeaders   = []byte("Access-Control-Request-Headers")
 
 	corsValueVaryOrigin = []byte("Origin")
+	corsValueTrue       = []byte("true")
+	corsValueWildcard   = []byte("*")
 )
 
 // CORSMiddleware returns a middleware that handles Cross-Origin Resource Sharing.
-// With no config, it allows all origins in development and requires explicit
-// config in production.
+// Empty AllowedOrigins allows every origin ("*"): this constructor does not
+// know the environment. Use CORSMiddlewareWithEnv (what app.CORS() does) for
+// the convention "permissive in development, explicit origins in production".
 func CORSMiddleware(cfg ...domain.CORSConfig) domain.Handler {
 	var config domain.CORSConfig
 	if len(cfg) > 0 {
 		config = cfg[0]
+	}
+	if len(config.AllowedOrigins) == 0 {
+		config.AllowedOrigins = []string{"*"}
 	}
 	// Security: reject credentials + wildcard combination
 	if config.AllowCredentials && hasWildcard(config.AllowedOrigins) {
@@ -41,8 +46,8 @@ func CORSMiddleware(cfg ...domain.CORSConfig) domain.Handler {
 }
 
 // CORSMiddlewareWithEnv returns a CORS middleware that respects the environment.
-// In development, it allows all origins by default. In production, it requires
-// explicit configuration.
+// In development, it allows all origins by default. Outside development, empty
+// AllowedOrigins allows no cross-origin request at all.
 func CORSMiddlewareWithEnv(config domain.CORSConfig, env domain.Env) domain.Handler {
 	if env == domain.EnvDevelopment && config.AllowedOrigins == nil && config.AllowedMethods == nil {
 		config.AllowedOrigins = []string{"*"}
@@ -57,170 +62,129 @@ func CORSMiddlewareWithEnv(config domain.CORSConfig, env domain.Env) domain.Hand
 }
 
 func corsMiddleware(cfg domain.CORSConfig) domain.Handler {
-	allowOrigin := "*"
-	if len(cfg.AllowedOrigins) > 0 && !hasWildcard(cfg.AllowedOrigins) {
-		allowOrigin = ""
-	}
+	allowAll := hasWildcard(cfg.AllowedOrigins)
 
-	allowMethods := "GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS"
+	allowMethods := []byte("GET,POST,PUT,DELETE,PATCH,HEAD,OPTIONS")
 	if len(cfg.AllowedMethods) > 0 {
-		allowMethods = strings.Join(cfg.AllowedMethods, ",")
+		allowMethods = []byte(strings.Join(cfg.AllowedMethods, ","))
 	}
 
 	allowHeaders := "Content-Type,Authorization"
 	if len(cfg.AllowedHeaders) > 0 {
 		allowHeaders = strings.Join(cfg.AllowedHeaders, ",")
 	}
+	reflectHeaders := allowHeaders == "*"
+	allowHeadersB := []byte(allowHeaders)
 
-	maxAge := "600"
+	maxAge := []byte("600")
 	if cfg.MaxAge > 0 {
-		maxAge = strconv.Itoa(cfg.MaxAge)
+		maxAge = []byte(strconv.Itoa(cfg.MaxAge))
 	}
 
-	originIndex := make(map[string]bool)
-	if !hasWildcard(cfg.AllowedOrigins) {
+	// Allowlist: exact match on the serialized origin (scheme://host[:port]).
+	// The lookup itself is the validation — only configured values are ever
+	// echoed back — so origins with a port or a single-label host
+	// (http://localhost:3000) work.
+	originIndex := make(map[string]struct{}, len(cfg.AllowedOrigins))
+	if !allowAll {
 		for _, o := range cfg.AllowedOrigins {
-			originIndex[o] = true
+			if o = normalizeOrigin(o); o != "" {
+				originIndex[o] = struct{}{}
+			}
 		}
 	}
-	allowAll := hasWildcard(cfg.AllowedOrigins)
 
 	return func(c *domain.Ctx) error {
 		fctx := c.AdapterData.(*FastCtx).FasthttpCtx()
 		h := &fctx.Response.Header
 
-		origin := b2s(fctx.Request.Header.PeekBytes(corsHeaderOrigin))
-		if origin == "" {
+		origin := fctx.Request.Header.PeekBytes(corsHeaderOrigin)
+		if len(origin) == 0 {
 			return nil
+		}
+		appendVary(h, corsValueVaryOrigin)
+
+		allowed := allowAll
+		if !allowed {
+			_, allowed = originIndex[normalizeOrigin(b2s(origin))]
 		}
 
 		// Preflight request
-		if methodBytes(fctx.Method(), "OPTIONS") {
-			reqMethod := b2s(fctx.Request.Header.PeekBytes(corsHeaderRequestMethod))
-			if reqMethod != "" {
-				// Set Vary header
-				h.SetCanonical(corsHeaderVary, corsValueVaryOrigin)
-
-				// Allow origin
-				h.SetCanonical(corsHeaderAllowOrigin, []byte(resolveOrigin(origin, allowOrigin, allowAll, originIndex)))
-
-				// Allow methods
-				h.SetCanonical(corsHeaderAllowMethods, []byte(allowMethods))
-
-				// Allow headers (reflect request headers if needed)
-				reqHeaders := b2s(fctx.Request.Header.PeekBytes(corsHeaderRequestHeaders))
-				effectiveHeaders := allowHeaders
-				if reqHeaders != "" && allowHeaders == "*" {
-					effectiveHeaders = reqHeaders
-				}
-				h.SetCanonical(corsHeaderAllowHeaders, []byte(effectiveHeaders))
-
-				// Credentials
-				if cfg.AllowCredentials {
-					h.SetCanonical(corsHeaderAllowCredentials, []byte("true"))
-				}
-
-				// Max age
-				h.SetCanonical(corsHeaderMaxAge, []byte(maxAge))
-
-				fctx.SetStatusCode(fasthttp.StatusNoContent)
-				return nil
+		if methodBytes(fctx.Method(), "OPTIONS") && len(fctx.Request.Header.PeekBytes(corsHeaderRequestMethod)) > 0 {
+			fctx.SetStatusCode(fasthttp.StatusNoContent)
+			if !allowed {
+				return nil // no CORS headers: the browser blocks the request
 			}
+			setAllowOrigin(h, origin, allowAll)
+			h.SetCanonical(corsHeaderAllowMethods, allowMethods)
+			// Allow headers (reflect request headers if needed)
+			if reqHeaders := fctx.Request.Header.PeekBytes(corsHeaderRequestHeaders); reflectHeaders && len(reqHeaders) > 0 {
+				h.SetCanonical(corsHeaderAllowHeaders, reqHeaders)
+			} else {
+				h.SetCanonical(corsHeaderAllowHeaders, allowHeadersB)
+			}
+			if cfg.AllowCredentials {
+				h.SetCanonical(corsHeaderAllowCredentials, corsValueTrue)
+			}
+			h.SetCanonical(corsHeaderMaxAge, maxAge)
+			return nil
 		}
 
 		// Actual request
-		h.SetCanonical(corsHeaderVary, corsValueVaryOrigin)
-		h.SetCanonical(corsHeaderAllowOrigin, []byte(resolveOrigin(origin, allowOrigin, allowAll, originIndex)))
-
-		if cfg.AllowCredentials {
-			h.SetCanonical(corsHeaderAllowCredentials, []byte("true"))
+		if !allowed {
+			return nil
 		}
-
+		setAllowOrigin(h, origin, allowAll)
+		if cfg.AllowCredentials {
+			h.SetCanonical(corsHeaderAllowCredentials, corsValueTrue)
+		}
 		return nil
 	}
 }
 
-func resolveOrigin(origin, defaultOrigin string, allowAll bool, originIndex map[string]bool) string {
+func setAllowOrigin(h *fasthttp.ResponseHeader, origin []byte, allowAll bool) {
 	if allowAll {
-		return "*"
+		h.SetCanonical(corsHeaderAllowOrigin, corsValueWildcard)
+		return
 	}
-	// Validate origin format before reflecting it
-	if !isValidOrigin(origin) {
+	h.SetCanonical(corsHeaderAllowOrigin, origin)
+}
+
+// normalizeOrigin lowercases an origin and drops a trailing slash, so a
+// configured "https://App.example.com/" matches the browser's
+// "https://app.example.com". Returns "" for "null" and values without a
+// scheme. Allocation-free when the origin is already normalized.
+func normalizeOrigin(o string) string {
+	o = strings.TrimSuffix(strings.TrimSpace(o), "/")
+	if o == "" || o == "null" || !strings.Contains(o, "://") {
 		return ""
 	}
-	if defaultOrigin == "" {
-		if originIndex[origin] {
-			return origin
+	for i := 0; i < len(o); i++ {
+		if c := o[i]; c >= 'A' && c <= 'Z' {
+			return strings.ToLower(o)
 		}
-		return ""
 	}
-	return defaultOrigin
+	return o
 }
 
-// isValidOrigin validates that an origin has a proper format
-// to prevent CORS-based attacks via malformed origins.
-func isValidOrigin(origin string) bool {
-	if origin == "" || origin == "null" {
-		return false
+// appendVary adds token to the Vary header, keeping what is already there.
+// CORS and Compress both vary the response; overwriting dropped
+// "Vary: Origin", so a shared cache could serve one origin's
+// Access-Control-Allow-Origin to another.
+func appendVary(h *fasthttp.ResponseHeader, token []byte) {
+	cur := h.PeekBytes(corsHeaderVary)
+	if len(cur) == 0 {
+		h.SetCanonical(corsHeaderVary, token)
+		return
 	}
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	// Must have a scheme (http or https)
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return false
-	}
-	// Must have a valid host
-	if u.Host == "" {
-		return false
-	}
-	// Host must not contain special characters that could indicate injection
-	if strings.ContainsAny(u.Host, "!@#$%^&*()+=[]{}|\\;:'\",<>?/") {
-		return false
-	}
-	// Validate host is a valid IP or hostname
-	host := u.Hostname()
-	if net.ParseIP(host) != nil {
-		return true // Valid IP address
-	}
-	// Validate as hostname (RFC 952 / RFC 1123)
-	if !isValidHostname(host) {
-		return false
-	}
-	return true
-}
-
-// isValidHostname validates that a string is a valid hostname.
-func isValidHostname(host string) bool {
-	if host == "" || len(host) > 253 {
-		return false
-	}
-	// Check each label
-	labels := strings.Split(host, ".")
-	if len(labels) < 2 {
-		return false // Must have at least two labels (e.g., example.com)
-	}
-	for _, label := range labels {
-		if label == "" || len(label) > 63 {
-			return false
-		}
-		// Must start and end with alphanumeric
-		if !isAlphanumeric(label[0]) || !isAlphanumeric(label[len(label)-1]) {
-			return false
-		}
-		// Can only contain alphanumeric and hyphens
-		for i := 0; i < len(label); i++ {
-			if !isAlphanumeric(label[i]) && label[i] != '-' {
-				return false
-			}
+	for _, part := range bytes.Split(cur, []byte(",")) {
+		if p := bytes.TrimSpace(part); bytes.EqualFold(p, token) || (len(p) == 1 && p[0] == '*') {
+			return
 		}
 	}
-	return true
-}
-
-func isAlphanumeric(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+	v := make([]byte, 0, len(cur)+2+len(token))
+	v = append(append(append(v, cur...), ", "...), token...)
+	h.SetCanonical(corsHeaderVary, v)
 }
 
 func hasWildcard(origins []string) bool {

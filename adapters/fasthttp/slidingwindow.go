@@ -35,7 +35,14 @@ type perKeySlidingWindow struct {
 	max      int
 	window   time.Duration
 	maxKeys  int
+	// lastSweep rate-limits full-table sweeps: with the table full of live
+	// keys (a flood of distinct IPs), sweeping on every new key meant an
+	// O(maxKeys) scan under the global lock per request.
+	lastSweep time.Time
 }
+
+// maxSweepInterval bounds how often a full table is rescanned for expired keys.
+const maxSweepInterval = time.Second
 
 // NewPerKeySlidingWindow creates a sliding window that keeps counters per key.
 // At most DefaultMaxRateLimitKeys keys are tracked; expired keys are swept
@@ -71,7 +78,9 @@ func (p *perKeySlidingWindow) get(key string, create bool) *usecases.SlidingWind
 		return nil
 	}
 	if len(p.windows) >= p.maxKeys {
-		p.sweepLocked(now)
+		if now.Sub(p.lastSweep) >= min(p.window, maxSweepInterval) {
+			p.sweepLocked(now)
+		}
 		if len(p.windows) >= p.maxKeys {
 			return p.overflow
 		}
@@ -82,6 +91,7 @@ func (p *perKeySlidingWindow) get(key string, create bool) *usecases.SlidingWind
 }
 
 func (p *perKeySlidingWindow) sweepLocked(now time.Time) {
+	p.lastSweep = now
 	for k, kw := range p.windows {
 		if now.Sub(kw.last) > p.window {
 			delete(p.windows, k)
@@ -92,6 +102,13 @@ func (p *perKeySlidingWindow) sweepLocked(now time.Time) {
 // Allow reports whether the request is allowed for the key.
 func (p *perKeySlidingWindow) Allow(key string) bool {
 	return p.get(key, true).Allow()
+}
+
+// AllowRemaining is Allow followed by Remaining with a single key lookup.
+func (p *perKeySlidingWindow) AllowRemaining(key string) (bool, int) {
+	w := p.get(key, true)
+	ok := w.Allow()
+	return ok, w.Remaining()
 }
 
 // Remaining returns how many requests remain for the key.

@@ -20,6 +20,15 @@ type rateLimiter interface {
 // two windows are swept (memory exhaustion guard for attacker-controlled keys).
 const maxBuckets = 8192
 
+// hardMaxBuckets caps the map when every bucket is still live (a flood of
+// distinct keys inside one window): new keys then share one overflow bucket
+// (fail-closed) instead of growing memory without bound.
+const hardMaxBuckets = 16 * maxBuckets
+
+// sweepInterval rate-limits sweeps once the map is past maxBuckets; sweeping
+// on every new key was an O(n) scan under the write lock per request.
+const sweepInterval = time.Second
+
 type bucketEntry struct {
 	limiter rateLimiter
 	// lastSeen is unix-nano, updated on every access (atomic: read under
@@ -34,6 +43,9 @@ type MemoryLimiter struct {
 	max      int
 	window   time.Duration
 	strategy domain.RateLimitStrategy
+
+	lastSweep time.Time   // guarded by mu
+	overflow  rateLimiter // shared by keys past hardMaxBuckets (lazy, guarded by mu)
 }
 
 // NewMemoryLimiter creates a MemoryLimiter with token bucket (default).
@@ -72,26 +84,32 @@ func (m *MemoryLimiter) getOrCreate(key string) rateLimiter {
 
 	entry, ok = m.buckets[key]
 	if !ok {
-		switch m.strategy {
-		case domain.StrategySlidingWindow:
-			b := usecases.NewSlidingWindow(m.max, m.window)
-			entry = &bucketEntry{limiter: b}
-		default:
-			b := usecases.NewTokenBucket(m.max, m.window)
-			entry = &bucketEntry{limiter: b}
+		now := time.Now()
+		if len(m.buckets) >= maxBuckets && now.Sub(m.lastSweep) >= sweepInterval {
+			m.sweepLocked(now)
 		}
+		if len(m.buckets) >= hardMaxBuckets {
+			if m.overflow == nil {
+				m.overflow = m.newLimiter()
+			}
+			return m.overflow
+		}
+		entry = &bucketEntry{limiter: m.newLimiter()}
 		m.buckets[key] = entry
-		if len(m.buckets) > maxBuckets {
-			m.sweepLocked(time.Now())
-		}
 	}
 	entry.lastSeen.Store(time.Now().UnixNano())
 	return entry.limiter
 }
 
-// sweepLocked removes buckets idle for more than two windows.
-// Caller holds the write lock.
+func (m *MemoryLimiter) newLimiter() rateLimiter {
+	if m.strategy == domain.StrategySlidingWindow {
+		return usecases.NewSlidingWindow(m.max, m.window)
+	}
+	return usecases.NewTokenBucket(m.max, m.window)
+}
+
 func (m *MemoryLimiter) sweepLocked(now time.Time) {
+	m.lastSweep = now
 	cutoff := now.Add(-2 * m.window).UnixNano()
 	for k, e := range m.buckets {
 		if e.lastSeen.Load() < cutoff {
