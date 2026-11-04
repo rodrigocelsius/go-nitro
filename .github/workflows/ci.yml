@@ -39,7 +39,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          # setup-go v7 exports GOTOOLCHAIN=local, so Go no longer switches to
+          # a newer toolchain on its own: a module with a go.work (cmd/nitrogen,
+          # whose workspace needs Go 1.26) must install the go.work version.
+          go-version-file: ${{ hashFiles(format('{0}/go.work', matrix.module)) != '' && format('{0}/go.work', matrix.module) || format('{0}/go.mod', matrix.module) }}
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - name: vet
         working-directory: ${{ matrix.module }}
