@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - WebSocket: frame headers are read into stack buffers, and large payloads are written without copying them into a new frame.
 
 ### Fixed
+- BLinq SQL aggregates (`Sum`, `SumInt64`, `Avg`, `Min`, `Max`) failed with "cannot scan NULL" when no row matched, because SQL returns NULL for an aggregate over an empty set. They now return 0.
 - CORS allowlists never matched origins with a port or a single-label host (`http://localhost:3000`, `https://app.example.com:8443`, `http://localhost`): an origin validator rejected them before the lookup. Matching is now exact on the normalized origin (case and trailing slash).
 
 ### Changed

@@ -160,11 +160,15 @@ func (b *bareSQL) aggregateQuery(ctx context.Context, q expr.Query) (float64, er
 	if err != nil {
 		return 0, err
 	}
-	var n float64
+	// SUM/AVG/MIN/MAX over no rows is NULL in SQL; report it as 0.
+	var n *float64
 	if err := b.db.QueryRowScan(ctx, c.SQL, c.Args, &n); err != nil {
 		return 0, err
 	}
-	return n, nil
+	if n == nil {
+		return 0, nil
+	}
+	return *n, nil
 }
 
 type mapResult struct {
