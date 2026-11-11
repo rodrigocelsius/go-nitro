@@ -1,24 +1,32 @@
 package fasthttp
 
 import (
+	"strings"
+
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
-// radixNode is a node of the radix tree used for all routes (static
-// and dynamic, unified).
+// radixNode is a node of the segment tree used for all routes (static
+// and dynamic, unified). A node has any number of static children and at most
+// one parameter child and one catch-all child: parameter NAMES belong to the
+// route (paramNames on the terminal node), not to the tree edge, so
+// /users/:id and /users/:name/posts share the same edge.
 type radixNode struct {
 	segment    string
-	isParam    bool
-	isCatchAll bool
 	handler    domain.Handler
-	routePath  string // registered pattern, e.g. /users/:id
+	routePath  string   // registered pattern, e.g. /users/:id
+	paramNames []string // names of the dynamic segments of routePath, in order
 	children   []*radixNode
-	hits       uint64 // branch prediction: contagem de acessos
+	param      *radixNode
+	catchAll   *radixNode
 }
 
-// RadixRouter implements ports.Router using a radix tree
+// RadixRouter implements ports.Router using a segment tree
 // per HTTP method. Structure validated by benchmark for high performance.
 // Includes an O(1) fast path for static routes via map.
+//
+// The tree is immutable after registration: Lookup never writes to it, so it
+// is safe for concurrent use by every request goroutine.
 type RadixRouter struct {
 	methodRoot *radixNode
 	// staticRoutes is the O(1) fast path for static routes (no parameters).
@@ -34,27 +42,53 @@ func NewRadixRouter() *RadixRouter {
 	}
 }
 
-// Add registers a route on the radix tree for the matching method.
+// Add registers a route on the tree for the matching method.
 // If the route is static (no parameters), it is also added to the fast-path map.
 // Supports:
 //   - Static routes: /users
 //   - Named parameters: /users/:id
 //   - Catch-all: /static/*filepath (must be the last segment)
 func (rt *RadixRouter) Add(method, path string, h domain.Handler) {
-	// Check whether it contains parameters or catch-all
-	hasParams := false
-	hasCatchAll := false
-	for i := 1; i < len(path); i++ {
-		if path[i] == ':' {
-			hasParams = true
-		}
-		if path[i] == '*' {
-			hasCatchAll = true
+	node := rt.methodNode(method)
+	var names []string
+	dynamic := false
+	for _, seg := range splitSegments(path) {
+		switch seg[0] {
+		case ':':
+			dynamic = true
+			names = append(names, seg[1:])
+			if node.param == nil {
+				node.param = &radixNode{segment: seg}
+			}
+			node = node.param
+		case '*':
+			dynamic = true
+			names = append(names, seg[1:])
+			if node.catchAll == nil {
+				node.catchAll = &radixNode{segment: seg}
+			}
+			node = node.catchAll
+		default:
+			var found *radixNode
+			for _, child := range node.children {
+				if child.segment == seg {
+					found = child
+					break
+				}
+			}
+			if found == nil {
+				found = &radixNode{segment: seg}
+				node.children = append(node.children, found)
+			}
+			node = found
 		}
 	}
+	node.handler = h
+	node.routePath = path
+	node.paramNames = names
 
-	// Fast path: add to the map for static routes
-	if !hasParams && !hasCatchAll {
+	// Fast path: static routes are also resolved by an exact-match map.
+	if !dynamic {
 		mm, ok := rt.staticRoutes[method]
 		if !ok {
 			mm = make(map[string]domain.Handler)
@@ -62,32 +96,10 @@ func (rt *RadixRouter) Add(method, path string, h domain.Handler) {
 		}
 		mm[path] = h
 	}
-
-	// Always add to the radix tree for consistency
-	node := rt.methodNode(method)
-	segs := splitSegments(path)
-	for _, seg := range segs {
-		isParam := len(seg) > 0 && seg[0] == ':'
-		isCatchAll := len(seg) > 0 && seg[0] == '*'
-		var found *radixNode
-		for _, child := range node.children {
-			if child.isParam == isParam && child.isCatchAll == isCatchAll && child.segment == seg {
-				found = child
-				break
-			}
-		}
-		if found == nil {
-			found = &radixNode{segment: seg, isParam: isParam, isCatchAll: isCatchAll}
-			node.children = append(node.children, found)
-		}
-		node = found
-	}
-	node.handler = h
-	node.routePath = path
 }
 
 // Lookup resolves method+path (both []byte) to a Handler.
-// Fast path: checks the O(1) static-route map before the radix tree.
+// Fast path: checks the O(1) static-route map before the tree.
 func (rt *RadixRouter) Lookup(method, path []byte, c *domain.Ctx) (domain.Handler, bool) {
 	// Fast path O(1): static-route map (zero-allocation via b2s)
 	if mm, ok := rt.staticRoutes[b2s(method)]; ok {
@@ -97,17 +109,12 @@ func (rt *RadixRouter) Lookup(method, path []byte, c *domain.Ctx) (domain.Handle
 		}
 	}
 
-	// Fallback: radix tree for dynamic routes
+	// Fallback: tree for dynamic routes
 	methodRoot := rt.findMethodNodeBytes(method)
 	if methodRoot == nil {
 		return nil, false
 	}
-	h, ok := radixLookupNoAlloc(methodRoot, path, c)
-	if ok && h != nil {
-		// Branch prediction: increment hits on the method root
-		methodRoot.hits++
-	}
-	return h, ok
+	return radixLookupNoAlloc(methodRoot, path, c)
 }
 
 // AllowedMethods lists the methods registered for path (used to answer 405
@@ -134,13 +141,12 @@ func (rt *RadixRouter) AllowedMethods(path []byte) []string {
 func (rt *RadixRouter) Routes() []domain.RouteInfo {
 	var routes []domain.RouteInfo
 	for _, methodNode := range rt.methodRoot.children {
-		method := methodNode.segment
-		collectRoutes(methodNode, method, "", &routes)
+		collectRoutes(methodNode, methodNode.segment, &routes)
 	}
 	return routes
 }
 
-// methodNode returns (creating if needed) the radix-tree root node
+// methodNode returns (creating if needed) the tree root node
 // for a specific HTTP method.
 func (rt *RadixRouter) methodNode(method string) *radixNode {
 	for _, child := range rt.methodRoot.children {
@@ -163,20 +169,19 @@ func (rt *RadixRouter) findMethodNodeBytes(method []byte) *radixNode {
 	return nil
 }
 
-func collectRoutes(node *radixNode, method, pathSoFar string, out *[]domain.RouteInfo) {
+func collectRoutes(node *radixNode, method string, out *[]domain.RouteInfo) {
 	if node.handler != nil {
-		p := pathSoFar
-		if p == "" {
-			p = "/"
-		}
+		p := "/" + strings.Join(splitSegments(node.routePath), "/")
 		*out = append(*out, domain.RouteInfo{Method: method, Path: p})
 	}
 	for _, child := range node.children {
-		seg := child.segment
-		if child.isCatchAll {
-			seg = "*" + seg[1:]
-		}
-		collectRoutes(child, method, pathSoFar+"/"+seg, out)
+		collectRoutes(child, method, out)
+	}
+	if node.param != nil {
+		collectRoutes(node.param, method, out)
+	}
+	if node.catchAll != nil {
+		collectRoutes(node.catchAll, method, out)
 	}
 }
 
@@ -195,144 +200,78 @@ func splitSegments(path string) []string {
 	return segs
 }
 
-// SortChildrenByHits sorts each node's children by hit count (most accessed first).
-// Should be called periodically (e.g. every 1000 requests) to keep branch prediction.
-func (rt *RadixRouter) SortChildrenByHits() {
-	sortNodeChildrenByHits(rt.methodRoot)
-}
-
-func sortNodeChildrenByHits(node *radixNode) {
-	if node == nil || len(node.children) <= 1 {
-		return
-	}
-
-	// Merge sort preserves stability and is O(n log n)
-	sorted := mergeSortNodes(node.children)
-	node.children = sorted
-
-	for _, child := range sorted {
-		sortNodeChildrenByHits(child)
-	}
-}
-
-func mergeSortNodes(nodes []*radixNode) []*radixNode {
-	if len(nodes) <= 1 {
-		return nodes
-	}
-	mid := len(nodes) / 2
-	left := mergeSortNodes(nodes[:mid])
-	right := mergeSortNodes(nodes[mid:])
-	return mergeNodes(left, right)
-}
-
-func mergeNodes(left, right []*radixNode) []*radixNode {
-	result := make([]*radixNode, 0, len(left)+len(right))
-	i, j := 0, 0
-	for i < len(left) && j < len(right) {
-		if left[i].hits >= right[j].hits {
-			result = append(result, left[i])
-			i++
-		} else {
-			result = append(result, right[j])
-			j++
-		}
-	}
-	result = append(result, left[i:]...)
-	result = append(result, right[j:]...)
-	return result
-}
-
-// FlattenTree returns all nodes in pre-order for cache locality.
-func (rt *RadixRouter) FlattenTree() []*radixNode {
-	var nodes []*radixNode
-	flattenNode(rt.methodRoot, &nodes)
-	return nodes
-}
-
-func flattenNode(node *radixNode, out *[]*radixNode) {
-	if node == nil {
-		return
-	}
-	*out = append(*out, node)
-	for _, child := range node.children {
-		flattenNode(child, out)
-	}
-}
-
-// radixLookupNoAlloc walks the radix tree by indexes over the
-// []byte path, never materializing a []string of segments.
+// radixLookupNoAlloc walks the tree by indexes over the []byte path, never
+// materializing a []string of segments. Captured values live in a
+// stack-allocated array and are bound to the route's parameter names only
+// once a handler is found.
 func radixLookupNoAlloc(root *radixNode, path []byte, c *domain.Ctx) (domain.Handler, bool) {
-	node := root
-	i := 1
-	n := len(path)
-
-	for i < n || (i == n && n > 1) {
-		start := i
-		for i < n && path[i] != '/' {
-			i++
-		}
-		seg := path[start:i]
-		i++
-
-		var next *radixNode
-		var paramMatch *radixNode
-		var catchAllMatch *radixNode
-		for _, child := range node.children {
-			if !child.isParam && !child.isCatchAll && matchPathBytes(seg, child.segment) {
-				next = child
-				break
-			}
-			if child.isParam {
-				paramMatch = child
-			}
-			if child.isCatchAll {
-				catchAllMatch = child
-			}
-		}
-		if next == nil {
-			next = paramMatch
-		}
-		if next == nil {
-			next = catchAllMatch
-		}
-		if next == nil {
-			return nil, false
-		}
-		if next.isParam {
-			c.SetParam(next.segment[1:], b2s(seg))
-		}
-		if next.isCatchAll {
-			// For catch-all, capture everything from this point
-			c.SetParam(next.segment[1:], b2s(path[start:]))
-			if next.handler != nil {
-				if next.routePath != "" {
-					c.SetRoute(next.routePath)
-				}
-				return next.handler, true
-			}
-			return nil, false
-		}
-		node = next
-	}
-
-	// Check for root-level catch-all if no handler was found
-	if node.handler == nil {
-		for _, child := range node.children {
-			if child.isCatchAll && child.handler != nil {
-				c.SetParam(child.segment[1:], "")
-				if child.routePath != "" {
-					c.SetRoute(child.routePath)
-				}
-				return child.handler, true
-			}
-		}
-	}
-
-	if node.handler == nil {
+	var vals [domain.MaxParams]string
+	node := radixFind(root, path, 1, &vals, 0)
+	if node == nil {
 		return nil, false
+	}
+	for i, name := range node.paramNames {
+		if i >= domain.MaxParams {
+			break
+		}
+		c.SetParam(name, vals[i])
 	}
 	if node.routePath != "" {
 		c.SetRoute(node.routePath)
 	}
 	return node.handler, true
+}
+
+// radixFind matches path[i:] under node. Precedence at every level is
+// static > parameter > catch-all, with backtracking: when the preferred
+// branch dead-ends further down, the next one is tried, so /items/me and
+// /items/:id/detail can coexist (/items/me/detail resolves to the latter).
+//
+// A parameter never matches an empty segment (/users/ is not /users/:id
+// with id=""); a catch-all does (/static/ → filepath="").
+func radixFind(node *radixNode, path []byte, i int, vals *[domain.MaxParams]string, nv int) *radixNode {
+	n := len(path)
+	if i > n || n <= 1 {
+		// Path fully consumed.
+		if node.handler != nil {
+			return node
+		}
+		if ca := node.catchAll; ca != nil && ca.handler != nil {
+			if nv < domain.MaxParams {
+				vals[nv] = ""
+			}
+			return ca
+		}
+		return nil
+	}
+
+	start := i
+	for i < n && path[i] != '/' {
+		i++
+	}
+	seg := path[start:i]
+
+	for _, child := range node.children {
+		if matchPathBytes(seg, child.segment) {
+			if found := radixFind(child, path, i+1, vals, nv); found != nil {
+				return found
+			}
+			break
+		}
+	}
+	if p := node.param; p != nil && len(seg) > 0 {
+		if nv < domain.MaxParams {
+			vals[nv] = b2s(seg)
+		}
+		if found := radixFind(p, path, i+1, vals, nv+1); found != nil {
+			return found
+		}
+	}
+	if ca := node.catchAll; ca != nil && ca.handler != nil {
+		if nv < domain.MaxParams {
+			vals[nv] = b2s(path[start:])
+		}
+		return ca
+	}
+	return nil
 }

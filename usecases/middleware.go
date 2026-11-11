@@ -51,6 +51,9 @@ func runPost(post []domain.Handler, c *domain.Ctx) {
 }
 
 func primeStatus(c *domain.Ctx, err error) {
+	if err == domain.ErrAbort {
+		return // response already written by the middleware
+	}
 	if httpErr, ok := err.(domain.HTTPError); ok {
 		c.SetStatus(httpErr.StatusCode())
 		return

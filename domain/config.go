@@ -87,6 +87,33 @@ type CORSConfig struct {
 	MaxAge int
 }
 
+// ServerConfig tunes the HTTP server. Every zero field keeps its default.
+type ServerConfig struct {
+	// ReadTimeout is the maximum time to read a full request, body
+	// included. Default: 30s.
+	ReadTimeout time.Duration
+	// WriteTimeout is the maximum time to write a response. Default: 30s.
+	WriteTimeout time.Duration
+	// IdleTimeout is how long a keep-alive connection may stay idle.
+	// Default: 120s.
+	IdleTimeout time.Duration
+	// ReadBufferSize is the per-connection read buffer and therefore the
+	// maximum size of the request line + headers (larger requests get 431).
+	// Default: 16 KiB — room for big cookies and identity-provider JWTs.
+	ReadBufferSize int
+	// WriteBufferSize is the per-connection write buffer. Default: 4 KiB.
+	WriteBufferSize int
+	// Concurrency is the maximum number of concurrent connections.
+	// Default: 262144.
+	Concurrency int
+	// MaxConnsPerIP caps concurrent connections per client IP (0 = unlimited).
+	MaxConnsPerIP int
+	// StreamRequestBody hands large request bodies to the handler as a
+	// stream (fasthttp RequestCtx.RequestBodyStream) instead of buffering
+	// them in memory first.
+	StreamRequestBody bool
+}
+
 // Config holds App initialization options.
 type Config struct {
 	// UseLinearRouter forces the linear-search router instead of the
@@ -115,9 +142,14 @@ type Config struct {
 	Security SecurityConfig
 
 	// RequestTimeout is the maximum execution time per request.
-	// Requests that exceed this limit receive status 408.
+	// Requests that exceed this limit receive status 503.
 	// Zero (default) means no timeout.
 	RequestTimeout time.Duration
+
+	// Server tunes the underlying HTTP server (timeouts, buffers,
+	// concurrency). The zero value is the production default — set a field
+	// only to change it.
+	Server ServerConfig
 
 	// TLSConfig configures the TLS server.
 	// When set, Listen/ListenTLS apply this configuration.

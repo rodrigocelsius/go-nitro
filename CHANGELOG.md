@@ -6,7 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `nitro.ErrAbort` / `c.Abort()`: a pre-middleware that already wrote its response stops the pipeline without the framework touching status or body.
+- `c.OnDone(fn)`: cleanup that runs when the request finishes (also on panic) — pre-middlewares cannot wrap the handler.
+- `Config.Server` (`nitro.ServerConfig`): `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadBufferSize`, `WriteBufferSize`, `Concurrency`, `MaxConnsPerIP`, `StreamRequestBody`. These were hard-coded.
+- `Retry-After` on 429 responses of `RateLimit` / `SlidingWindowRateLimitMiddleware`.
+- CI: `staticcheck` on every module; concurrent router lookup test under `-race`.
+
+### Fixed
+- **`TimeoutMiddleware` / `app.Timeout(d)` cancelled the request context before the handler ran** (`defer cancel()` in a pre-middleware), so every Store call failed with `context canceled`. The deadline now lives until the request finishes.
+- **Router:** `/users/:id` and `/users/:name/posts` could not coexist (`/users/1` answered 404) — parameter names now belong to the route, not to the tree edge. Lookup backtracks, so `/items/me` + `/items/:id/detail` resolves `/items/me/detail`. A parameter no longer matches an empty segment (`/users/` is not `/users/:id` with `id=""`).
+- **Data race in the router:** every dynamic lookup incremented an unsynchronized hit counter that nothing read. The counter and the unused `SortChildrenByHits` / `FlattenTree` are gone; the tree is immutable after registration.
+- Requests with more than 4 KiB of headers (identity-provider JWTs, several cookies) were rejected with 431: the read buffer default is now 16 KiB.
+- Resource lists over SQL had no `ORDER BY` unless the client sorted, and no tiebreaker when it did, so pages could repeat or skip rows. The primary key is always the last sort key.
+- `ShutdownWithContext` leaked a goroutine and left connections open when the context expired; it now delegates to fasthttp's own context-aware shutdown.
+
+### Changed
+- A request that exceeds `Config.RequestTimeout` / `app.Timeout` answers **503** instead of 408 (408 means the *client* was slow to send the request).
+
 ### Security
+- **The default 1 MiB body limit was not enforced.** `MaxBodySizeMiddleware` wrote the 413 and returned `nil`, so the handler still ran on the oversized body and overwrote the response; the effective limit was fasthttp's 4 MiB. It now returns `PayloadTooLargeError` and the pipeline stops (same for `MaxHeaderSizeMiddleware`, 431). **Behavior change:** bodies between 1 MiB and 4 MiB are now rejected as documented; `Config.MaxRequestBodySize` raises the limit for the whole app (it also drives the default middleware now).
+- **Resource list cache key.** The key ignored the filter operator, so `?price_gte=10` and `?price_lt=10` shared one cache entry and answered each other's results. It was also a 64-bit FNV hash over tenant id + client-controlled filter values — forgeable. The key now covers every component (length-prefixed) and is SHA-256.
+- **`KeycloakAuthRoutes` had no rate limit.** `/login` and `/refresh` are now limited per client IP like `AuthRoutes` (`DefaultAuthRateLimit` per minute); extra middlewares can be passed.
+- **Panics were invisible.** A recovered panic answered 500 but was logged nowhere and skipped the post-middlewares (no access-log line, tracing span never ended). It is now logged through `slog` with method, path, request id and stack, and the post-middlewares run.
 - **JWT refresh-token replay.** `RefreshToken` checked and revoked the old JTI in two steps, so concurrent refreshes with one token all minted new pairs. Rotation is now an atomic consume (new optional `jwt.RevocationConsumer`, implemented by the in-memory store and by `redisrevocation` via `SET NX`), and a store error during rotation rejects the refresh instead of being ignored. Reads of the revocation store no longer race with `SetRevocationStore`.
 - **`app.CORS()` answered `*` in production.** With no `AllowedOrigins` it ignored the environment, contrary to the documented convention; it now uses `Config.Security.CORS` and is permissive only in development. `nitro.CORSMiddleware()` with no origins still allows any origin (it does not know the environment).
 - **CORS `Vary`.** `Compress` overwrote `Vary: Origin`, so a shared cache could serve one origin's `Access-Control-Allow-Origin` to another. Vary tokens are now merged. Denied origins get no `Access-Control-Allow-*` headers at all (an empty `Access-Control-Allow-Origin` used to be sent).

@@ -104,13 +104,7 @@ func ResponseTimePair() (pre, post domain.Handler) {
 
 // errResponseWritten is returned by a pre-middleware that already wrote the
 // full response (redirect) to stop the pipeline; handleError ignores it.
-var errResponseWritten error = responseWritten{}
-
-type responseWritten struct{}
-
-func (responseWritten) Error() string   { return "nitro: response already written" }
-func (responseWritten) StatusCode() int { return 308 }
-func (responseWritten) Body() any       { return nil }
+var errResponseWritten = domain.ErrAbort
 
 // ── HTTPS redirect ───────────────────────────────────────────────────
 

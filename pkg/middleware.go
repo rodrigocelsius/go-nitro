@@ -305,7 +305,8 @@ func (a *App) Compress(cfg ...CompressConfig) *App {
 	return a.UsePost(CompressMiddleware(cfg...))
 }
 
-// Timeout aborts requests slower than d with 408 for the whole app (chainable).
+// Timeout sets a deadline of d on every request context; requests that run
+// past it answer 503 (chainable).
 //
 //	app.Timeout(10 * time.Second)
 func (a *App) Timeout(d time.Duration) *App {

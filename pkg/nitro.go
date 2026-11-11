@@ -63,6 +63,14 @@ type Env = domain.Env
 // SecurityConfig controls security headers.
 type SecurityConfig = domain.SecurityConfig
 
+// ServerConfig tunes the HTTP server (timeouts, buffers, concurrency) via
+// Config.Server; the zero value is the production default.
+type ServerConfig = domain.ServerConfig
+
+// ErrAbort stops the pipeline keeping the response exactly as a
+// pre-middleware already wrote it (same as returning c.Abort()).
+var ErrAbort = domain.ErrAbort
+
 // CORSConfig controls CORS.
 type CORSConfig = domain.CORSConfig
 

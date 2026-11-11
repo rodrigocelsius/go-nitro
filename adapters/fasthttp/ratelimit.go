@@ -12,7 +12,19 @@ import (
 // RateLimitMiddleware returns middleware that rate-limits requests
 // and includes X-RateLimit-* headers on the response.
 func RateLimitMiddleware(limiter domain.RateLimiter, max int, keyFunc func(*domain.Ctx) string) domain.Handler {
+	return rateLimitMiddleware(limiter, max, keyFunc, 0)
+}
+
+// rateLimitMiddleware is RateLimitMiddleware with a known window: rejected
+// requests then carry Retry-After (RFC 9110 §10.2.3) so well-behaved clients
+// back off instead of hammering the limiter.
+func rateLimitMiddleware(limiter domain.RateLimiter, max int, keyFunc func(*domain.Ctx) string, window time.Duration) domain.Handler {
 	limit := strconv.Itoa(max)
+	retryAfter := ""
+	if window > 0 {
+		secs := int((window + time.Second - 1) / time.Second)
+		retryAfter = strconv.Itoa(secs)
+	}
 	combined, _ := limiter.(allowRemainer)
 	return func(c *domain.Ctx) error {
 		key := keyFunc(c)
@@ -30,6 +42,9 @@ func RateLimitMiddleware(limiter domain.RateLimiter, max int, keyFunc func(*doma
 			if fc != nil {
 				fc.SetHeader("X-RateLimit-Limit", limit)
 				fc.SetHeader("X-RateLimit-Remaining", "0")
+				if retryAfter != "" {
+					fc.SetHeader("Retry-After", retryAfter)
+				}
 			}
 			return &domain.TooManyRequestsError{}
 		}
@@ -153,7 +168,7 @@ func CompositeKeyFunc() func(*domain.Ctx) string {
 // SlidingWindowRateLimitMiddleware returns sliding-window rate-limit middleware.
 func SlidingWindowRateLimitMiddleware(max int, window time.Duration, keyFunc func(*domain.Ctx) string) domain.Handler {
 	limiter := NewSlidingWindowLimiter(max, window)
-	return RateLimitMiddleware(limiter, max, keyFunc)
+	return rateLimitMiddleware(limiter, max, keyFunc, window)
 }
 
 // NewSlidingWindowLimiter creates a sliding-window limiter for middleware use.

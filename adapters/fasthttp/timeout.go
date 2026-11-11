@@ -8,13 +8,14 @@ import (
 )
 
 // TimeoutMiddleware returns a middleware that limits request execution time
-// using context deadlines. When the timeout expires, the handler should
-// check c.Context().Err() to detect the deadline.
+// using context deadlines. Handlers observe it through c.Context() (every
+// Store / HTTP client call given the request context is cancelled when the
+// deadline passes).
 //
-// This is a cooperative timeout: it sets a deadline on the request context
-// and returns a 408 response after the handler completes if the deadline
-// was exceeded. For strict enforcement, use Config.RequestTimeout which
-// also applies a server-level timeout.
+// This is a cooperative timeout: the handler is not interrupted. When it
+// returns after the deadline without having produced a successful response
+// of its own, the client receives 503. The deadline context is released when
+// the request finishes.
 //
 // Usage:
 //
@@ -28,10 +29,40 @@ func TimeoutMiddleware(timeout time.Duration) domain.Handler {
 	}
 
 	return func(c *domain.Ctx) error {
-		ctx, cancel := context.WithTimeout(c.Context(), timeout)
-		defer cancel()
-
-		c.SetContext(ctx)
+		fc, ok := c.AdapterData.(*FastCtx)
+		if !ok || fc == nil {
+			return nil
+		}
+		fc.applyTimeout(timeout)
 		return nil
 	}
+}
+
+// applyTimeout installs a deadline on the request context. The cancel func
+// runs when the request finishes (OnDone) — never when the middleware
+// returns, which would hand the handler an already-cancelled context.
+func (c *FastCtx) applyTimeout(timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(c.RequestContext(), timeout)
+	c.SetRequestContext(ctx)
+	c.deadlineCtx = ctx
+	c.OnDone(cancel)
+}
+
+var timeoutBody = []byte(`{"error":"request timeout","message":"request exceeded the time limit"}`)
+
+// writeTimeoutIfExceeded turns a request that ran past its deadline into a
+// 503, unless the handler already answered with something other than a
+// plain 200 or the generic 500 produced by a context error.
+func (c *FastCtx) writeTimeoutIfExceeded() {
+	if c.deadlineCtx == nil || c.deadlineCtx.Err() != context.DeadlineExceeded {
+		return
+	}
+	fctx := c.fasthttpReq
+	if st := fctx.Response.StatusCode(); st != 200 && st != 500 {
+		return
+	}
+	fctx.Response.ResetBody()
+	fctx.SetStatusCode(503)
+	fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
+	fctx.SetBody(timeoutBody)
 }

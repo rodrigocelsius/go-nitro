@@ -2,9 +2,11 @@ package nitro
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -169,25 +171,38 @@ func (r *cachedQueryableRepo) ListQuery(ctx context.Context, q domain.ListQuery)
 	return v.(*ResourceListResult), nil
 }
 
-// listQueryCacheKey fingerprints page/filters/sort with NUL separators and a
-// final hash, so distinct filter sets can never collide and key memory stays
-// bounded for long filter values.
+// listQueryCacheKey fingerprints page/filters/sort. Every component —
+// including the filter operator: ?price_gte=10 and ?price_lt=10 are
+// different queries — is length-prefixed, so distinct queries can never
+// produce the same input, and the digest is SHA-256: the key also carries
+// the tenant filter next to client-controlled values, so a forgeable hash
+// (FNV) would let one tenant aim for another tenant's cached page.
 func listQueryCacheKey(q domain.ListQuery) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d:%d", q.Page, q.PerPage)
+	part := func(s string) {
+		b.WriteString(strconv.Itoa(len(s)))
+		b.WriteByte(':')
+		b.WriteString(s)
+	}
+	b.WriteString(strconv.Itoa(q.Page))
+	b.WriteByte(',')
+	b.WriteString(strconv.Itoa(q.PerPage))
 	for _, f := range q.Filters {
-		fmt.Fprintf(&b, "\x00f\x00%s\x00%s", f.Field, f.Value)
+		b.WriteByte('f')
+		part(f.Field)
+		part(strings.ToLower(f.Op))
+		part(f.Value)
 	}
 	for _, s := range q.Sort {
-		dir := byte('a')
 		if s.Desc {
-			dir = 'd'
+			b.WriteByte('d')
+		} else {
+			b.WriteByte('a')
 		}
-		fmt.Fprintf(&b, "\x00s\x00%s\x00%c", s.Field, dir)
+		part(s.Field)
 	}
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(b.String()))
-	return fmt.Sprintf("lq:%08x", h.Sum64())
+	sum := sha256.Sum256([]byte(b.String()))
+	return "lq:" + hex.EncodeToString(sum[:])
 }
 
 func (r *cachedRepo) Create(ctx context.Context, entity any) error {

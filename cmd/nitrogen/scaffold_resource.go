@@ -327,9 +327,7 @@ func patchMainResource(names resourceNames, sql bool) {
 				modelImp+"\t\""+mod+"/internal/handler\"\n", 1)
 		}
 		wire := fmt.Sprintf("\trepo := nitro.NewMemoryRepo[model.%s]()\n\thandler.Register(app, repo)", names.Type)
-		if strings.Contains(src, "handler.Register(app)") {
-			src = strings.Replace(src, "handler.Register(app)", wire, 1)
-		}
+		src = strings.Replace(src, "handler.Register(app)", wire, 1)
 	}
 	if err := writeFileFmt(path, []byte(src), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "nitrogen: main: %v\n", err)

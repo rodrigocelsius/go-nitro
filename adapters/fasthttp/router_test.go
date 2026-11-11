@@ -1,6 +1,7 @@
 package fasthttp
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
@@ -214,64 +215,67 @@ func BenchmarkRadixRouter_LookupParam(b *testing.B) {
 	}
 }
 
-func TestRadixRouter_SortChildrenByHits(t *testing.T) {
+func TestRadixRouter_ParamNamesPerRoute(t *testing.T) {
 	rt := NewRadixRouter()
-	rt.Add("GET", "/a", dummyHandler)
-	rt.Add("GET", "/b", dummyHandler)
-	rt.Add("GET", "/c", dummyHandler)
-
-	c := &domain.Ctx{}
-
-	// Access /b 10 times
-	for i := 0; i < 10; i++ {
-		rt.Lookup([]byte("GET"), []byte("/b"), c)
-	}
-	// Access /c 5 times
-	for i := 0; i < 5; i++ {
-		rt.Lookup([]byte("GET"), []byte("/c"), c)
-	}
-
-	// Check hits before sort
-	methodNode := rt.methodNode("GET")
-
-	rt.SortChildrenByHits()
-
-	// After sort, /b should be first (10 hits), then /c (5 hits), then /a (0 hits)
-	if methodNode.children[0].hits < methodNode.children[1].hits {
-		t.Error("children not sorted by hits")
-	}
-}
-
-func TestRadixRouter_FlattenTree(t *testing.T) {
-	rt := NewRadixRouter()
-	rt.Add("GET", "/users", dummyHandler)
 	rt.Add("GET", "/users/:id", dummyHandler)
-	rt.Add("POST", "/users", dummyHandler)
+	rt.Add("GET", "/users/:name/posts", dummyHandler)
 
-	flat := rt.FlattenTree()
-	if len(flat) == 0 {
-		t.Error("FlattenTree returned empty")
+	c := &domain.Ctx{}
+	if _, ok := rt.Lookup([]byte("GET"), []byte("/users/1"), c); !ok || c.Param("id") != "1" {
+		t.Fatalf("/users/1: ok=%v id=%q", ok, c.Param("id"))
 	}
-
-	// Should have at least: root + GET + /users + /users/:id + POST
-	if len(flat) < 4 {
-		t.Errorf("FlattenTree returned %d nodes, want >= 4", len(flat))
+	c = &domain.Ctx{}
+	if _, ok := rt.Lookup([]byte("GET"), []byte("/users/bob/posts"), c); !ok || c.Param("name") != "bob" {
+		t.Fatalf("/users/bob/posts: ok=%v name=%q", ok, c.Param("name"))
 	}
 }
 
-func TestRadixRouter_HitsIncrement(t *testing.T) {
+func TestRadixRouter_Backtracking(t *testing.T) {
 	rt := NewRadixRouter()
-	rt.Add("GET", "/users/:id", dummyHandler) // Dynamic route
+	rt.Add("GET", "/items/me", dummyHandler)
+	rt.Add("GET", "/items/:id/detail", dummyHandler)
 
 	c := &domain.Ctx{}
-	for i := 0; i < 100; i++ {
-		rt.Lookup([]byte("GET"), []byte("/users/123"), c)
+	if _, ok := rt.Lookup([]byte("GET"), []byte("/items/me/detail"), c); !ok || c.Param("id") != "me" {
+		t.Fatalf("/items/me/detail: ok=%v id=%q", ok, c.Param("id"))
 	}
+	if c.Route() != "/items/:id/detail" {
+		t.Errorf("route = %q", c.Route())
+	}
+	c = &domain.Ctx{}
+	if _, ok := rt.Lookup([]byte("GET"), []byte("/items/me"), c); !ok || c.ParamCount != 0 {
+		t.Fatalf("/items/me: ok=%v params=%d", ok, c.ParamCount)
+	}
+}
 
-	methodNode := rt.methodNode("GET")
-	if methodNode.hits != 100 {
-		t.Errorf("hits = %d, want 100", methodNode.hits)
+func TestRadixRouter_EmptyParamDoesNotMatch(t *testing.T) {
+	rt := NewRadixRouter()
+	rt.Add("GET", "/users/:id", dummyHandler)
+	if _, ok := rt.Lookup([]byte("GET"), []byte("/users/"), &domain.Ctx{}); ok {
+		t.Fatal("/users/ must not match /users/:id with an empty id")
 	}
+}
+
+// Lookup must not write to the tree: run with -race.
+func TestRadixRouter_ConcurrentLookup(t *testing.T) {
+	rt := NewRadixRouter()
+	rt.Add("GET", "/users/:id", dummyHandler)
+	rt.Add("GET", "/users/:id/posts/:post", dummyHandler)
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				c := &domain.Ctx{}
+				if _, ok := rt.Lookup([]byte("GET"), []byte("/users/7/posts/9"), c); !ok || c.Param("post") != "9" {
+					t.Error("lookup failed")
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestRadixRouter_CatchAllRoute(t *testing.T) {

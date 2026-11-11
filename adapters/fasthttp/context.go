@@ -98,6 +98,12 @@ type FastCtx struct {
 	locals    map[string]any
 	validator domain.Validator
 	app       *App // set during request handling (reverse routing)
+
+	// deadlineCtx is the context installed by Config.RequestTimeout /
+	// TimeoutMiddleware (nil when the request has no deadline).
+	deadlineCtx context.Context
+	// onDone are cleanups run when the request finishes (see OnDone).
+	onDone []func()
 }
 
 // NewFastCtx creates a new FastCtx.
@@ -114,11 +120,42 @@ func (c *FastCtx) Reset(fctx *fasthttp.RequestCtx) {
 	c.AdapterData = c
 	c.reqCtx.Store(nil)
 	c.startTime = time.Time{}
+	c.deadlineCtx = nil
 	// validator/app are assigned by Handler on each request.
 	if c.locals != nil {
 		clear(c.locals)
 	}
 }
+
+// OnDone registers fn to run when the request finishes — after the handler,
+// the post-middlewares and the error handler, even when the handler panics.
+// Cleanups run in reverse registration order (like defer). Use it from a
+// pre-middleware that must release something it acquired (a context cancel
+// func, a semaphore slot), since pre-middlewares cannot wrap the handler.
+func (c *FastCtx) OnDone(fn func()) {
+	if fn != nil {
+		c.onDone = append(c.onDone, fn)
+	}
+}
+
+// runDone runs and clears the OnDone cleanups.
+func (c *FastCtx) runDone() {
+	for i := len(c.onDone) - 1; i >= 0; i-- {
+		fn := c.onDone[i]
+		c.onDone[i] = nil
+		fn()
+	}
+	c.onDone = c.onDone[:0]
+}
+
+// Abort stops the pipeline keeping the response exactly as already written:
+//
+//	c.JSON(451, body)
+//	return c.Abort()
+//
+// Returning nil from a pre-middleware lets the handler run; returning an
+// HTTP error renders that error. Abort is the third option.
+func (c *FastCtx) Abort() error { return domain.ErrAbort }
 
 // SetValidator associates the App validator with this request context.
 func (c *FastCtx) SetValidator(v domain.Validator) {

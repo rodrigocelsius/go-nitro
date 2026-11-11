@@ -112,7 +112,7 @@ func (q Query) CountGrouped(ctx context.Context, p provider.Provider, groupCol e
 	}
 	out := make([]GroupCount, 0, len(scanned))
 	for _, r := range scanned {
-		out = append(out, GroupCount{Key: r.Key, Count: r.Count})
+		out = append(out, GroupCount(r))
 	}
 	return out, nil
 }

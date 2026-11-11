@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -58,6 +59,7 @@ type App struct {
 	env                   domain.Env
 	maxRequestBodySize    int
 	debug                 bool
+	serverCfg             domain.ServerConfig
 }
 
 // DefaultMaxRequestBodySize matches fasthttp's own built-in default (4 MiB)
@@ -95,6 +97,7 @@ func New(cfg ...domain.Config) *App {
 		app.env = config.Env
 		app.maxRequestBodySize = config.MaxRequestBodySize
 		app.debug = config.Debug
+		app.serverCfg = config.Server
 		if config.TrustedProxies != nil {
 			ts, err := parseTrust(config.TrustedProxies)
 			if err != nil {
@@ -239,50 +242,15 @@ func (a *App) Handler() func(fctx *fasthttp.RequestCtx) {
 	methodNotAllowedHandler := usecases.CompileHandler(func(c *domain.Ctx) error {
 		return domain.ErrMethodNotAllowed
 	}, a.globalPre, a.globalPost, nil)
+
 	metricsEnabled := a.metrics != nil && a.metrics.enabled
-	panicBody := []byte(`{"error":"internal server error","message":"an unexpected error occurred"}`)
-
-	if a.requestTimeout > 0 {
-		return a.handlerWithTimeout(optionsHandler, notFoundHandler, methodNotAllowedHandler, metricsEnabled, panicBody)
-	}
-	if !metricsEnabled && a.disableInlineRecover {
-		return a.handlerHot(optionsHandler, notFoundHandler, methodNotAllowedHandler)
-	}
-	return a.handlerFast(optionsHandler, notFoundHandler, methodNotAllowedHandler, metricsEnabled, panicBody)
-}
-
-// handlerHot is the lean fasthttp path: no metrics, no inline recover (pool still deferred).
-func (a *App) handlerHot(
-	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
-) func(fctx *fasthttp.RequestCtx) {
-	validator := a.validator
-	return func(fctx *fasthttp.RequestCtx) {
-		c := a.pool.Get().(*FastCtx)
-		c.Reset(fctx)
-		c.app = a
-		c.validator = validator
-		defer func() {
-			c.app = nil
-			a.pool.Put(c)
-		}()
-
-		h, ok := a.lookupHandler(fctx, c, optionsHandler)
-		if !ok {
-			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
-		}
-		if err := h(&c.Ctx); err != nil {
-			a.handleError(&c.Ctx, err)
-		}
-	}
-}
-
-func (a *App) handlerFast(
-	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
-	metricsEnabled bool,
-	panicBody []byte,
-) func(fctx *fasthttp.RequestCtx) {
 	validator := a.validator
 	recoverInline := !a.disableInlineRecover
+	timeout := a.requestTimeout
+	// Post-middlewares (access log, span end, metrics) still have to run
+	// when the handler panics: the panic unwinds past the compiled chain.
+	post := append([]domain.Handler(nil), a.globalPost...)
+
 	return func(fctx *fasthttp.RequestCtx) {
 		var start time.Time
 		if metricsEnabled {
@@ -296,11 +264,12 @@ func (a *App) handlerFast(
 		defer func() {
 			if recoverInline {
 				if r := recover(); r != nil {
-					fctx.Response.Reset()
-					fctx.SetStatusCode(fasthttp.StatusInternalServerError)
-					fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
-					fctx.SetBody(a.recoverBody(r, panicBody))
+					a.handlePanic(c, r, post)
 				}
+			}
+			c.runDone()
+			if metricsEnabled {
+				a.metrics.RecordRequest(fctx.Response.StatusCode(), time.Since(start))
 			}
 			c.app = nil
 			a.pool.Put(c)
@@ -310,86 +279,61 @@ func (a *App) handlerFast(
 		if !ok {
 			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
 		}
-
+		if timeout > 0 {
+			c.applyTimeout(timeout)
+		}
 		if err := h(&c.Ctx); err != nil {
 			a.handleError(&c.Ctx, err)
 		}
-		if metricsEnabled {
-			a.metrics.RecordRequest(fctx.Response.StatusCode(), time.Since(start))
-		}
+		c.writeTimeoutIfExceeded()
 	}
 }
 
-// recoverBody builds the response body for a recovered panic. This is the
-// *only* place a panic is actually caught (see recover.go's doc comment on
-// RecoverMiddlewareWithDebug — pre-middleware registered via Use never
-// observes a panic, since it unwinds straight past the compiled
-// pre/handler/post chain up to this inline defer/recover). Because of
-// that, the sanitized-stack-trace debug behavior must be gated by
-// a.debug (Config.Debug) right here, not in the middleware, or V-33's
-// intended protection (never leak internals unless explicitly opted in)
-// would silently not apply.
-func (a *App) recoverBody(r any, panicBody []byte) []byte {
+var panicBody = []byte(`{"error":"internal server error","message":"an unexpected error occurred"}`)
+
+// handlePanic is the single place a handler/middleware panic is caught. It
+// logs the panic with its stack (a 500 with no trace anywhere is
+// undebuggable), writes the generic 500 body and runs the post-middlewares
+// so the request still gets its access-log line and its tracing span ends.
+func (a *App) handlePanic(c *FastCtx, r any, post []domain.Handler) {
+	fctx := c.fasthttpReq
+	stack := debug.Stack()
+	slog.Error("nitro: panic recovered",
+		"panic", fmt.Sprint(r),
+		"method", string(fctx.Method()),
+		"path", string(fctx.Path()),
+		"request_id", c.Ctx.RequestID(),
+		"stack", string(stack),
+	)
+
+	fctx.Response.Reset()
+	fctx.SetStatusCode(fasthttp.StatusInternalServerError)
+	fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
+	fctx.SetBody(a.recoverBody(r, stack))
+
+	for _, h := range post {
+		runPostSafe(h, &c.Ctx)
+	}
+}
+
+// runPostSafe runs one post-middleware after a panic, swallowing a second
+// panic so the remaining ones (and the pool release) still happen.
+func runPostSafe(h domain.Handler, c *domain.Ctx) {
+	defer func() { _ = recover() }()
+	_ = h(c)
+}
+
+// recoverBody builds the response body for a recovered panic. The
+// sanitized-stack-trace debug behavior is gated by a.debug (Config.Debug)
+// right here: this is the only place a panic is observed, so V-33's
+// protection (never leak internals unless explicitly opted in) must apply
+// at this point.
+func (a *App) recoverBody(r any, stack []byte) []byte {
 	if !a.debug {
 		return panicBody
 	}
-	sanitized := sanitizeStackTrace(string(debug.Stack()))
+	sanitized := sanitizeStackTrace(string(stack))
 	return []byte(fmt.Sprintf(`{"error":"internal server error","message":%q,"stack":%q}`, fmt.Sprint(r), sanitized))
-}
-
-func (a *App) handlerWithTimeout(
-	optionsHandler, notFoundHandler, methodNotAllowedHandler domain.Handler,
-	metricsEnabled bool,
-	panicBody []byte,
-) func(fctx *fasthttp.RequestCtx) {
-	timeout := a.requestTimeout
-	validator := a.validator
-	recoverInline := !a.disableInlineRecover
-	return func(fctx *fasthttp.RequestCtx) {
-		var start time.Time
-		if metricsEnabled {
-			start = time.Now()
-		}
-
-		c := a.pool.Get().(*FastCtx)
-		c.Reset(fctx)
-		c.app = a
-		c.validator = validator
-		defer func() {
-			if recoverInline {
-				if r := recover(); r != nil {
-					fctx.Response.Reset()
-					fctx.SetStatusCode(fasthttp.StatusInternalServerError)
-					fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
-					fctx.SetBody(a.recoverBody(r, panicBody))
-				}
-			}
-			c.app = nil
-			a.pool.Put(c)
-		}()
-
-		h, ok := a.lookupHandler(fctx, c, optionsHandler)
-		if !ok {
-			h = a.missHandler(fctx, notFoundHandler, methodNotAllowedHandler)
-		}
-
-		timeoutCtx, cancel := context.WithTimeout(c.RequestContext(), timeout)
-		c.SetRequestContext(timeoutCtx)
-		if err := h(&c.Ctx); err != nil {
-			a.handleError(&c.Ctx, err)
-		}
-		cancel()
-
-		if timeoutCtx.Err() == context.DeadlineExceeded && fctx.Response.StatusCode() == 200 {
-			fctx.Response.Reset()
-			fctx.SetStatusCode(fasthttp.StatusRequestTimeout)
-			fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
-			fctx.SetBodyString(`{"error":"request timeout","message":"request exceeded the time limit"}`)
-		}
-		if metricsEnabled {
-			a.metrics.RecordRequest(fctx.Response.StatusCode(), time.Since(start))
-		}
-	}
 }
 
 // missHandler answers a lookup miss: 405 + Allow when the path exists under
@@ -458,24 +402,39 @@ func (a *App) Err() error {
 // DefaultConcurrency matches fasthttp / Fiber (256 * 1024).
 const DefaultConcurrency = 256 * 1024
 
+// Server defaults (overridable through Config.Server).
+const (
+	DefaultReadTimeout  = 30 * time.Second
+	DefaultWriteTimeout = 30 * time.Second
+	DefaultIdleTimeout  = 120 * time.Second
+	// DefaultReadBufferSize bounds the request line + headers. 4 KiB (the
+	// fasthttp default) rejected ordinary requests carrying an identity
+	// provider JWT or a few cookies with 431.
+	DefaultReadBufferSize  = 16 * 1024
+	DefaultWriteBufferSize = 4096
+)
+
 // serverConfig returns a *fasthttp.Server tuned for high concurrency.
 // Concurrency follows the fasthttp/Fiber default (256*1024). NoDefault* skips
-// headers generated on the hot path. Timeouts protect against hung connections.
+// headers generated on the hot path. Timeouts protect against hung
+// connections. Everything is overridable through Config.Server.
 func (a *App) serverConfig() *fasthttp.Server {
 	maxBody := a.maxRequestBodySize
 	if maxBody <= 0 {
 		maxBody = DefaultMaxRequestBodySize
 	}
+	sc := a.serverCfg
 	return &fasthttp.Server{
 		Handler:            a.Handler(),
-		ReadBufferSize:     4096,
-		WriteBufferSize:    4096,
-		ReadTimeout:        30 * time.Second,
-		WriteTimeout:       30 * time.Second,
-		IdleTimeout:        120 * time.Second,
-		MaxConnsPerIP:      0,
+		ReadBufferSize:     orInt(sc.ReadBufferSize, DefaultReadBufferSize),
+		WriteBufferSize:    orInt(sc.WriteBufferSize, DefaultWriteBufferSize),
+		ReadTimeout:        orDuration(sc.ReadTimeout, DefaultReadTimeout),
+		WriteTimeout:       orDuration(sc.WriteTimeout, DefaultWriteTimeout),
+		IdleTimeout:        orDuration(sc.IdleTimeout, DefaultIdleTimeout),
+		MaxConnsPerIP:      sc.MaxConnsPerIP,
 		MaxRequestsPerConn: 0,
 		MaxRequestBodySize: maxBody,
+		StreamRequestBody:  sc.StreamRequestBody,
 		// Header names stay normalized: HTTP field names are case-insensitive
 		// (RFC 9110 §5.1) and HTTP/2 proxies, Node fetch and browsers send
 		// them lowercase. With normalization disabled, Peek("Authorization")
@@ -483,8 +442,22 @@ func (a *App) serverConfig() *fasthttp.Server {
 		NoDefaultServerHeader: true,
 		NoDefaultDate:         true,
 		NoDefaultContentType:  true,
-		Concurrency:           DefaultConcurrency,
+		Concurrency:           orInt(sc.Concurrency, DefaultConcurrency),
 	}
+}
+
+func orInt(v, def int) int {
+	if v > 0 {
+		return v
+	}
+	return def
+}
+
+func orDuration(v, def time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return def
 }
 
 // newServer builds the fasthttp server and publishes it for Shutdown.
@@ -632,7 +605,7 @@ func (a *App) Shutdown() error {
 // handleError processes a handler/middleware error using the
 // custom ErrorHandler if configured, or the default fallback.
 func (a *App) handleError(c *domain.Ctx, err error) {
-	if err == errResponseWritten {
+	if err == domain.ErrAbort {
 		return
 	}
 	if a.errorHandler != nil {
@@ -674,15 +647,7 @@ type GracefulShutdownConfig struct {
 func (a *App) ShutdownWithContext(ctx context.Context) error {
 	var err error
 	if srv := a.currentServer(); srv != nil {
-		done := make(chan error, 1)
-		go func() {
-			done <- srv.Shutdown()
-		}()
-		select {
-		case err = <-done:
-		case <-ctx.Done():
-			err = ctx.Err()
-		}
+		err = srv.ShutdownWithContext(ctx)
 	}
 	a.fireOnShutdown()
 	return err

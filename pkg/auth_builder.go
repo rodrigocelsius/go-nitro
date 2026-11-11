@@ -126,17 +126,22 @@ func (a *App) AuthRoutes(prefix string, auth *Auth) *App {
 	return a
 }
 
-// KeycloakAuthRoutes registers POST {prefix}/login and /refresh (Keycloak password grant).
+// KeycloakAuthRoutes registers POST {prefix}/login and /refresh (Keycloak
+// password grant), rate-limited per client IP like AuthRoutes
+// (DefaultAuthRateLimit per minute) — the password grant is a credential
+// stuffing target just the same. Pass extra middlewares (e.g. a stricter
+// nitro.RateLimit) to add to it.
 //
 //	kc, _ := nitro.NewKeycloak(cfg)
 //	app.KeycloakAuthRoutes("/auth", kc)
 //	app.MeRoute(nitro.JWTMiddleware(kc.Provider()))
-func (a *App) KeycloakAuthRoutes(prefix string, kc *KeycloakService) *App {
+func (a *App) KeycloakAuthRoutes(prefix string, kc *KeycloakService, mws ...Handler) *App {
 	if kc == nil {
 		return a.fail(errors.New("nitro: KeycloakAuthRoutes requires *KeycloakService"))
 	}
 	prefix = "/" + strings.Trim(prefix, "/")
-	g := a.Group(prefix)
+	mws = append([]Handler{RateLimit(DefaultAuthRateLimit, time.Minute)}, mws...)
+	g := a.Group(prefix, mws...)
 	tokens := kc.Tokens()
 	g.Post("/login", keycloakLoginHandler(tokens))
 	g.Post("/refresh", keycloakRefreshHandler(tokens))

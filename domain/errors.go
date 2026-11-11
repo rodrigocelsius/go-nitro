@@ -96,6 +96,39 @@ func (e *TooManyRequestsError) Error() string   { return "rate limit exceeded" }
 func (e *TooManyRequestsError) StatusCode() int { return 429 }
 func (e *TooManyRequestsError) Body() any       { return map[string]string{"error": "rate limit exceeded"} }
 
+// PayloadTooLargeError represents a 413 error (request body over the limit).
+type PayloadTooLargeError struct {
+	MaxBytes int64
+}
+
+func (e *PayloadTooLargeError) Error() string   { return "payload too large" }
+func (e *PayloadTooLargeError) StatusCode() int { return 413 }
+func (e *PayloadTooLargeError) Body() any {
+	return map[string]any{"error": "payload too large", "max_bytes": e.MaxBytes}
+}
+
+// ErrAbort stops the pipeline without touching the response: a
+// pre-middleware that already wrote the full response (redirect, cached
+// body, custom rejection) returns it so the handler does not run. It is not
+// an HTTPError — status, headers and body stay exactly as written.
+//
+//	c.JSON(451, body)
+//	return nitro.ErrAbort
+var ErrAbort error = abortError{}
+
+type abortError struct{}
+
+func (abortError) Error() string { return "nitro: request aborted, response already written" }
+
+// ServiceUnavailableError represents a 503 error.
+type ServiceUnavailableError struct {
+	Message string
+}
+
+func (e *ServiceUnavailableError) Error() string   { return e.Message }
+func (e *ServiceUnavailableError) StatusCode() int { return 503 }
+func (e *ServiceUnavailableError) Body() any       { return map[string]string{"error": e.Message} }
+
 // --- Server errors (5xx) ---
 
 // InternalServerError represents a 500 error.

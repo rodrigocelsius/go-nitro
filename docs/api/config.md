@@ -29,7 +29,9 @@ app := nitro.New(nitro.Config{
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Env` | `Env` | `EnvProduction` | Affects HSTS and dev CORS |
-| `RequestTimeout` | `time.Duration` | `0` | Per-request timeout (408) |
+| `RequestTimeout` | `time.Duration` | `0` | Per-request timeout (503) |
+| `Server` | `ServerConfig` | 30s read/write, 120s idle, 16 KiB header buffer | HTTP server tuning: `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadBufferSize` (max request line + headers), `WriteBufferSize`, `Concurrency`, `MaxConnsPerIP`, `StreamRequestBody` |
+| `MaxRequestBodySize` | `int` | 1 MiB | Request body limit (413 above it) |
 | `TLSConfig` | `*tls.Config` | `nil` | Used by Listen / ListenTLS |
 | `ErrorHandler` | `func(*Ctx, error) error` | `nil` | Global error override |
 | `DisableRequestID` | `bool` | `false` | Skip RequestID middleware |

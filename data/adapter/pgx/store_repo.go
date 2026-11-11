@@ -104,10 +104,14 @@ func (r *StoreRepo[T]) ListQuery(ctx context.Context, lq domain.ListQuery) (*dom
 		fld := field.Col[any](r.store.table, col)
 		q = q.Where(filterPred(fld, f.Op, val, f.Value))
 	}
+	sortedByID := false
 	for _, s := range lq.Sort {
 		col, ok := r.jsonToDB[s.Field]
 		if !ok {
 			continue
+		}
+		if col == r.store.idCol {
+			sortedByID = true
 		}
 		ord := field.Col[any](r.store.table, col)
 		if s.Desc {
@@ -115,6 +119,12 @@ func (r *StoreRepo[T]) ListQuery(ctx context.Context, lq domain.ListQuery) (*dom
 		} else {
 			q = q.OrderBy(ord.OrderAsc())
 		}
+	}
+	// Deterministic pages: without a unique tiebreaker the database may
+	// return rows in any order (and repeat or skip rows across pages when
+	// the sort column has duplicates). The primary key is always last.
+	if _, hasID := r.dbTypes[r.store.idCol]; hasID && !sortedByID {
+		q = q.OrderBy(field.Col[any](r.store.table, r.store.idCol).OrderAsc())
 	}
 	q = q.Paginate(uint64(page), uint64(per))
 	pageRes, err := query.PaginateCollect[T](ctx, q, r.store.api.Provider())

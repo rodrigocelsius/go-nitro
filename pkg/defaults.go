@@ -60,7 +60,13 @@ func (a *App) applyDefaults() *App {
 	})
 	a.inner.Use(pre)
 	a.inner.UsePost(post)
-	a.inner.Use(nitroadapter.MaxBodySizeMiddleware(DefaultMaxBody))
+	// Config.MaxRequestBodySize raises (or tightens) the limit for the whole
+	// app; the 1 MiB convention applies only when it is unset.
+	maxBody := DefaultMaxBody
+	if a.cfg.MaxRequestBodySize > 0 {
+		maxBody = int64(a.cfg.MaxRequestBodySize)
+	}
+	a.inner.Use(nitroadapter.MaxBodySizeMiddleware(maxBody))
 
 	if !a.cfg.DisableTelemetry && !oteladapter.Disabled() {
 		_ = oteladapter.Ensure(a.cfg.ServiceName)

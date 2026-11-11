@@ -7,6 +7,8 @@ import (
 // MaxBodySizeMiddleware returns middleware that limits request body size.
 // Requests with a body larger than maxBytes receive 413 Payload Too Large.
 // Checks both Content-Length and the actual body size to prevent bypass.
+// The rejection is returned as an error, so the pipeline stops and the
+// handler never sees the oversized body.
 func MaxBodySizeMiddleware(maxBytes int64) domain.Handler {
 	return func(c *domain.Ctx) error {
 		fc, ok := c.AdapterData.(*FastCtx)
@@ -16,13 +18,13 @@ func MaxBodySizeMiddleware(maxBytes int64) domain.Handler {
 		fctx := fc.FasthttpCtx()
 
 		contentLength := fctx.Request.Header.ContentLength()
-		if contentLength > int(maxBytes) {
-			return fc.JSON(413, map[string]any{"error": "payload too large", "max_bytes": maxBytes})
+		if int64(contentLength) > maxBytes {
+			return &domain.PayloadTooLargeError{MaxBytes: maxBytes}
 		}
 
 		bodySize := int64(len(fctx.PostBody()))
 		if bodySize > maxBytes {
-			return fc.JSON(413, map[string]any{"error": "payload too large", "max_bytes": maxBytes})
+			return &domain.PayloadTooLargeError{MaxBytes: maxBytes}
 		}
 
 		return nil
@@ -40,7 +42,7 @@ func MaxHeaderSizeMiddleware(maxBytes int) domain.Handler {
 
 		headerSize := len(fc.FasthttpCtx().Request.Header.Header())
 		if headerSize > maxBytes {
-			return fc.JSON(431, map[string]string{"error": "headers too large"})
+			return &domain.CodedError{Status: 431, Code: "HEADERS_TOO_LARGE", Message: "headers too large"}
 		}
 		return nil
 	}
