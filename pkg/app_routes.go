@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"reflect"
 
 	nitroadapter "github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2"
@@ -489,6 +490,35 @@ func (a *App) ListenTLS(addr, certFile, keyFile string, cfg ...GracefulShutdownC
 		return a.inner.ListenTLS(addr, certFile, keyFile)
 	}
 	return a.listenGracefulTLS(addr, certFile, keyFile, cfg...)
+}
+
+// ListenHTTP2 serves the app over HTTP/2 and HTTP/1.1 with Go's net/http
+// server instead of fasthttp (which speaks only HTTP/1.1). With a
+// certificate and key it serves TLS and negotiates h2 by ALPN; with both
+// empty it serves cleartext HTTP/2 (h2c) for use behind a load balancer.
+// Graceful shutdown is enabled by default (same opt-out as Listen).
+//
+// Trade-offs of the bridge: request bodies are buffered in memory (up to
+// Config.MaxRequestBodySize), WebSocket upgrades are not available, and
+// each request costs more than on the native server. See
+// docs/guide/deployment.md.
+//
+//	app.ListenHTTP2(":8443", "cert.pem", "key.pem")
+func (a *App) ListenHTTP2(addr, certFile, keyFile string, cfg ...GracefulShutdownConfig) error {
+	if err := a.startScheduler(); err != nil {
+		return err
+	}
+	if a.cfg.DisableGracefulShutdown {
+		defer a.stopScheduler()
+		return a.inner.ListenHTTP2(addr, certFile, keyFile)
+	}
+	return a.inner.ListenWithGracefulShutdownHTTP2(addr, certFile, keyFile, a.wrapGracefulConfig(cfg...))
+}
+
+// NetHTTPHandler exposes the app as a standard net/http handler (the
+// bridge ListenHTTP2 serves), to mount it in an existing net/http server.
+func (a *App) NetHTTPHandler() http.Handler {
+	return a.inner.NetHTTPHandler()
 }
 
 // ListenAutoTLS starts the HTTPS server with automatic certificates

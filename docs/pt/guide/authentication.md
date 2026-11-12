@@ -37,6 +37,35 @@ admin.Get("/dashboard", func(c *nitro.Ctx) error {
 })
 ```
 
+## Limite de tentativas de login
+
+`AuthRoutes` e `KeycloakAuthRoutes` limitam requisições **por IP** (20/min, `auth.WithRateLimit`) e logins com falha **por conta** (10 falhas em 15 min, de qualquer IP — `auth.WithAccountRateLimit(max, window)`). O limite por conta é o que segura uma tentativa de adivinhar senha distribuída por muitos endereços; um login bem-sucedido zera a contagem, e a conta bloqueada responde `429` com `Retry-After`.
+
+## Chaves assimétricas e rotação
+
+HS256 (o padrão) usa um segredo compartilhado: todo serviço que valida tokens também consegue emiti-los. Com chave assimétrica, só o serviço de autenticação tem a chave privada; os demais validam com as chaves públicas publicadas como JWKS.
+
+```go
+jwtp, err := nitro.JWTProviderWithKeys(cfg, nitro.JWTKeys{
+    Signing: nitro.JWTSigningKey{ID: "2026-11", Key: privateKey}, // RSA ≥ 2048 (RS256), ECDSA P-256 (ES256) ou Ed25519 (EdDSA)
+})
+auth := nitro.NewAuth(cfg).WithTokenProvider(jwtp).WithStore(users, users)
+app.AuthRoutes("/auth", auth)
+app.JWKSRoute("/.well-known/jwks.json", jwtp) // somente chaves públicas
+```
+
+Rotação sem deslogar ninguém:
+
+```go
+jwtp.RotateSigningKey(nitro.JWTSigningKey{ID: "2026-12", Key: newKey}) // tokens novos usam a nova; a antiga continua validando
+// depois do RefreshTokenTTL, quando não houver mais token da chave antiga:
+jwtp.RetireKey("2026-11")
+```
+
+Os tokens levam o id da chave (`kid`); um token com `kid` desconhecido, ou com algoritmo diferente do registrado para aquela chave, é rejeitado. Outros serviços consomem o JWKS com `nitro.OIDCProvider` (abaixo).
+
+Em produção, `AuthRoutes` registra um aviso enquanto as revogações (logout, rotação de refresh) ficam em memória: com mais de uma réplica, use um store compartilhado com `SetRevocationStore(redisrevocation.New(rdb))`.
+
 ## Session
 
 ```go

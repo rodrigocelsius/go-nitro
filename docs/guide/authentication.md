@@ -37,6 +37,35 @@ admin.Get("/dashboard", func(c *nitro.Ctx) error {
 })
 ```
 
+## Login throttling
+
+`AuthRoutes` and `KeycloakAuthRoutes` limit requests **per client IP** (20/min, `auth.WithRateLimit`) and failed logins **per account** (10 failures in 15 min, from any IP — `auth.WithAccountRateLimit(max, window)`). The per-account limit is what stops a password-guessing run spread over many addresses; a successful login clears the count, and a locked account answers `429` with `Retry-After`.
+
+## Asymmetric keys and rotation
+
+HS256 (the default) uses one shared secret: every service that validates tokens can also mint them. With an asymmetric key only the auth service holds the private key; the others validate with the public keys published as a JWKS.
+
+```go
+jwtp, err := nitro.JWTProviderWithKeys(cfg, nitro.JWTKeys{
+    Signing: nitro.JWTSigningKey{ID: "2026-11", Key: privateKey}, // RSA ≥ 2048 (RS256), ECDSA P-256 (ES256) or Ed25519 (EdDSA)
+})
+auth := nitro.NewAuth(cfg).WithTokenProvider(jwtp).WithStore(users, users)
+app.AuthRoutes("/auth", auth)
+app.JWKSRoute("/.well-known/jwks.json", jwtp) // public keys only
+```
+
+Rotation without logging anyone out:
+
+```go
+jwtp.RotateSigningKey(nitro.JWTSigningKey{ID: "2026-12", Key: newKey}) // new tokens use it; the old key still validates
+// after RefreshTokenTTL, when no token of the old key is alive:
+jwtp.RetireKey("2026-11")
+```
+
+Tokens carry the key id (`kid`); a token whose `kid` is unknown, or whose algorithm is not the one of that key, is rejected. Other services consume the JWKS with `nitro.OIDCProvider` (below).
+
+In production, `AuthRoutes` logs a warning while revocations (logout, refresh rotation) are kept in memory: with more than one replica, plug a shared store with `SetRevocationStore(redisrevocation.New(rdb))`.
+
 ## Session
 
 `SessionMiddleware` **requires** a valid session cookie and returns 401

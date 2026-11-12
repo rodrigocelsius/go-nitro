@@ -69,7 +69,8 @@ func opParamName(field, op string) string {
 
 // buildListQuery builds ListQuery from query params + ResourceOpts.
 // Only Filterable / FilterRules fields are accepted; values and count are clamped (anti-DoS).
-func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.ListQuery {
+// idx is the Resource's precomputed vocabulary (nil builds one for this call).
+func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts, idx *listIndex) domain.ListQuery {
 	lq := domain.ListQuery{Page: page, PerPage: perPage}
 	maxFilters := opts.MaxFilters
 	if maxFilters <= 0 {
@@ -79,7 +80,9 @@ func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.
 	if maxLen <= 0 {
 		maxLen = DefaultListMaxFilterLen
 	}
-	camel := acceptCamelQueryEnabled(opts)
+	if idx == nil {
+		idx = newListIndex(opts)
+	}
 
 	add := func(field, value, op string) {
 		if len(lq.Filters) >= maxFilters {
@@ -95,67 +98,50 @@ func buildListQuery(c *domain.Ctx, page, perPage int, opts ResourceOpts) domain.
 		lq.Filters = append(lq.Filters, domain.ListFilter{Field: field, Value: value, Op: op})
 	}
 
-	for _, name := range opts.Filterable {
-		if v := queryParam(c, name, camel); v != "" {
-			add(name, v, "eq")
+	if vals, ok := idx.collect(c); ok {
+		for i, v := range vals {
+			if v != "" {
+				add(idx.slots[i].field, v, idx.slots[i].op)
+			}
 		}
-	}
-	// Operator suffixes on any Filterable field: ?price_gte=10&price_lt=50&name_contains=ab
-	for _, name := range opts.Filterable {
-		for _, op := range filterOpSuffixes {
-			if v := queryParam(c, opParamName(name, op), camel); v != "" {
-				add(name, v, op)
+	} else {
+		// The adapter cannot enumerate the query string: one lookup per
+		// accepted spelling, in the same order.
+		camel := acceptCamelQueryEnabled(opts)
+		for _, name := range opts.Filterable {
+			if v := queryParam(c, name, camel); v != "" {
+				add(name, v, "eq")
+			}
+		}
+		for _, name := range opts.Filterable {
+			for _, op := range filterOpSuffixes {
+				if v := queryParam(c, opParamName(name, op), camel); v != "" {
+					add(name, v, op)
+				}
+			}
+		}
+		for _, rule := range opts.FilterRules {
+			param := rule.Param
+			if param == "" {
+				param = rule.Field
+			}
+			if v := queryParam(c, param, camel); v != "" {
+				field := rule.Field
+				if field == "" {
+					field = param
+				}
+				add(field, v, rule.Op)
 			}
 		}
 	}
-	for _, rule := range opts.FilterRules {
-		param := rule.Param
-		if param == "" {
-			param = rule.Field
-		}
-		if v := queryParam(c, param, camel); v != "" {
-			field := rule.Field
-			if field == "" {
-				field = param
-			}
-			add(field, v, rule.Op)
-		}
-	}
-	if def := opts.DefaultSort; queryParam(c, "sort", false) == "" && def != "" {
+
+	sortKey := c.QueryParam("sort")
+	if def := opts.DefaultSort; sortKey == "" && def != "" {
 		lq.Sort = append(lq.Sort, domain.ListSort{Field: strings.TrimPrefix(def, "-"), Desc: strings.HasPrefix(def, "-")})
 	}
-	if sortKey := queryParam(c, "sort", false); sortKey != "" {
-		desc := false
-		if strings.HasPrefix(sortKey, "-") {
-			desc = true
-			sortKey = strings.TrimPrefix(sortKey, "-")
-		}
-		canonical := sortKey
-		ok := false
-		for _, a := range opts.Sortable {
-			if a == sortKey {
-				ok, canonical = true, a
-				break
-			}
-			if camel {
-				if aSnake, aCamel := nameVariants(a); aSnake == sortKey || aCamel == sortKey {
-					ok, canonical = true, a
-					break
-				}
-			}
-		}
-		if !ok && camel {
-			// Rare spellings (e.g. "UnitPrice"): convert the request value once.
-			snake, cam := transform.SnakeCase(sortKey), transform.CamelCase(sortKey)
-			for _, a := range opts.Sortable {
-				if a == snake || a == cam {
-					ok, canonical = true, a
-					break
-				}
-			}
-		}
-		if ok {
-			lq.Sort = append(lq.Sort, domain.ListSort{Field: canonical, Desc: desc})
+	if sortKey != "" {
+		if field, desc, ok := resolveSort(sortKey, opts); ok {
+			lq.Sort = append(lq.Sort, domain.ListSort{Field: field, Desc: desc})
 		}
 	}
 	return lq
@@ -234,7 +220,7 @@ func filterItemsOpts(c *domain.Ctx, items []any, opts ResourceOpts) []any {
 	if len(items) == 0 || (len(opts.Filterable) == 0 && len(opts.FilterRules) == 0) {
 		return items
 	}
-	lq := buildListQuery(c, 1, 1, opts)
+	lq := buildListQuery(c, 1, 1, opts, nil)
 	if len(lq.Filters) == 0 {
 		return items
 	}

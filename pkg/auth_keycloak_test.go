@@ -47,7 +47,7 @@ func (f *fakeKeycloakTokens) Logout(ctx context.Context, refreshToken string) er
 func TestKeycloakLoginHandler(t *testing.T) {
 	tokens := &fakeKeycloakTokens{}
 	app := New(Config{DisableDefaults: true})
-	app.Post("/auth/login", keycloakLoginHandler(tokens))
+	app.Post("/auth/login", keycloakLoginHandler(tokens, nil))
 
 	tc := NewTestClient(app)
 	resp := tc.PostJSON(t, "/auth/login", Map{"username": "ada", "password": "secret"})
@@ -66,7 +66,7 @@ func TestKeycloakLoginHandler(t *testing.T) {
 
 func TestKeycloakLoginHandler_Validation(t *testing.T) {
 	app := New(Config{DisableDefaults: true})
-	app.Post("/auth/login", keycloakLoginHandler(&fakeKeycloakTokens{}))
+	app.Post("/auth/login", keycloakLoginHandler(&fakeKeycloakTokens{}, nil))
 	tc := NewTestClient(app)
 	resp := tc.PostJSON(t, "/auth/login", Map{"username": "ada"})
 	if resp.StatusCode() < 400 {
@@ -90,7 +90,7 @@ func TestKeycloakRefreshHandler(t *testing.T) {
 func TestKeycloakLoginHandler_UpstreamError(t *testing.T) {
 	tokens := &fakeKeycloakTokens{err: errors.New("bad credentials")}
 	app := New(Config{DisableDefaults: true})
-	app.Post("/auth/login", keycloakLoginHandler(tokens))
+	app.Post("/auth/login", keycloakLoginHandler(tokens, nil))
 	tc := NewTestClient(app)
 	resp := tc.PostJSON(t, "/auth/login", Map{"username": "ada", "password": "x"})
 	if resp.StatusCode() < 400 {

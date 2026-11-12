@@ -104,27 +104,26 @@ func (r *StoreRepo[T]) ListQuery(ctx context.Context, lq domain.ListQuery) (*dom
 		fld := field.Col[any](r.store.table, col)
 		q = q.Where(filterPred(fld, f.Op, val, f.Value))
 	}
-	sortedByID := false
-	for _, s := range lq.Sort {
-		col, ok := r.jsonToDB[s.Field]
-		if !ok {
-			continue
+	q, keys := orderForList(q, r.store.table, r.store.idCol, r.jsonToDB, r.dbTypes, lq)
+	if lq.Keyset {
+		// Cursor paging: seek past the previous page instead of OFFSET,
+		// and no COUNT.
+		pred, ok, err := keysetAfter(r.store.table, keys, r.dbTypes, lq.After)
+		if err != nil {
+			return nil, err
 		}
-		if col == r.store.idCol {
-			sortedByID = true
+		if ok {
+			q = q.Where(pred)
 		}
-		ord := field.Col[any](r.store.table, col)
-		if s.Desc {
-			q = q.OrderBy(ord.OrderDesc())
-		} else {
-			q = q.OrderBy(ord.OrderAsc())
+		var rows []T
+		if err := q.Limit(uint64(per)).Collect(ctx, r.store.api.Provider(), &rows); err != nil {
+			return nil, err
 		}
-	}
-	// Deterministic pages: without a unique tiebreaker the database may
-	// return rows in any order (and repeat or skip rows across pages when
-	// the sort column has duplicates). The primary key is always last.
-	if _, hasID := r.dbTypes[r.store.idCol]; hasID && !sortedByID {
-		q = q.OrderBy(field.Col[any](r.store.table, r.store.idCol).OrderAsc())
+		items := make([]any, len(rows))
+		for i := range rows {
+			items[i] = &rows[i]
+		}
+		return &domain.ResourceListResult{Items: items, PerPage: per}, nil
 	}
 	q = q.Paginate(uint64(page), uint64(per))
 	pageRes, err := query.PaginateCollect[T](ctx, q, r.store.api.Provider())
@@ -521,4 +520,82 @@ func structIDAndSetsOnly(entity any, table, idCol string, only map[string]bool) 
 		})
 	})
 	return id, sets
+}
+
+// keysetKey is one column of the list ordering.
+type keysetKey struct {
+	col   string
+	desc  bool
+	value int // index into ListCursor.Values, or -1 for the cursor ID
+}
+
+// orderForList applies the list ordering — the requested sort fields, then
+// the primary key — and returns it as keyset columns. Without a unique
+// tiebreaker the database may return rows in any order (and repeat or skip
+// rows across pages when the sort column has duplicates), so the primary
+// key is always the last sort key.
+func orderForList(q query.Query, table, idCol string, jsonToDB map[string]string, dbTypes map[string]reflect.Type, lq domain.ListQuery) (query.Query, []keysetKey) {
+	var keys []keysetKey
+	sortedByID := false
+	for i, s := range lq.Sort {
+		col, ok := jsonToDB[s.Field]
+		if !ok {
+			continue
+		}
+		if col == idCol {
+			sortedByID = true
+		}
+		ord := field.Col[any](table, col)
+		if s.Desc {
+			q = q.OrderBy(ord.OrderDesc())
+		} else {
+			q = q.OrderBy(ord.OrderAsc())
+		}
+		keys = append(keys, keysetKey{col: col, desc: s.Desc, value: i})
+	}
+	if _, hasID := dbTypes[idCol]; hasID && !sortedByID {
+		q = q.OrderBy(field.Col[any](table, idCol).OrderAsc())
+		keys = append(keys, keysetKey{col: idCol, value: -1})
+	}
+	return q, keys
+}
+
+// keysetAfter builds the predicate "rows after the cursor" for the ordering
+// keys (k1, …, kn):
+//
+//	k1 > v1 OR (k1 = v1 AND k2 > v2) OR … OR (k1 = v1 AND … AND kn > vn)
+//
+// with < for descending keys. ok is false when there is no cursor (first
+// page). Values are bound parameters coerced to the column types.
+func keysetAfter(table string, keys []keysetKey, dbTypes map[string]reflect.Type, after *domain.ListCursor) (pred field.Pred, ok bool, err error) {
+	if after == nil || len(keys) == 0 {
+		return pred, false, nil
+	}
+	vals := make([]any, len(keys))
+	for i, k := range keys {
+		raw := after.ID
+		if k.value >= 0 {
+			if k.value >= len(after.Values) {
+				return pred, false, domain.NewBadRequest("invalid cursor")
+			}
+			raw = after.Values[k.value]
+		}
+		vals[i] = coerceValue(dbTypes[k.col], raw)
+	}
+	for i, k := range keys {
+		fld := field.Col[any](table, k.col)
+		term := fld.Gt(vals[i])
+		if k.desc {
+			term = fld.Lt(vals[i])
+		}
+		for j := i - 1; j >= 0; j-- {
+			term = field.Col[any](table, keys[j].col).Eq(vals[j]).And(term)
+		}
+		if i == 0 {
+			pred = term
+		} else {
+			pred = pred.Or(term)
+		}
+	}
+	return pred, true, nil
 }

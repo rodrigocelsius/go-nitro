@@ -78,6 +78,17 @@ app.Listen(":443")
 app.ListenAutoTLS(":443", "example.com", "www.example.com")
 ```
 
+## HTTP/2
+
+`Listen` uses fasthttp, which speaks HTTP/1.1 only. `ListenHTTP2` serves the same app with Go's `net/http` server, over HTTP/2 and HTTP/1.1:
+
+```go
+app.ListenHTTP2(":8443", "cert.pem", "key.pem") // TLS, h2 negotiated by ALPN
+app.ListenHTTP2(":8080", "", "")                // cleartext h2c, behind a load balancer that speaks HTTP/2 to backends
+```
+
+Routes, middlewares, timeouts (`Config.Server`) and graceful shutdown work the same. The bridge costs something: request bodies are buffered in memory (up to `Config.MaxRequestBodySize`), WebSocket upgrades are not available (HTTP/2 has no `Upgrade`), and each request is slower than on the native server. Behind a proxy that already terminates HTTP/2 (nginx, ALB, Cloudflare), keep `Listen`. `app.NetHTTPHandler()` returns the same bridge as an `http.Handler`.
+
 ## Health Checks
 
 Register health check endpoints for orchestrators (Kubernetes, ECS, etc.):

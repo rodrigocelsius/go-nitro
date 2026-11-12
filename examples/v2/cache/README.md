@@ -1,6 +1,6 @@
 # Cache
 
-Resource reads cached with zero configuration: in-process per replica by default; with `REDIS_ADDR`, a read-through Redis shared by all replicas, busted on writes. If Redis goes down, reads go to the database. `nitro.Remember` for any computation. Tests use miniredis (two "replicas" + Redis outage).
+Resource reads go through the App cache: with `REDIS_ADDR`, a read-through Redis shared by all replicas and busted on writes; a per-process cache is opt-in per Resource (`CacheTTL`). If Redis goes down, reads go to the database. `nitro.Remember` for any computation. Tests use miniredis (two "replicas" + Redis outage).
 
 Guide: [`docs/guide/cache.md`](../../../docs/guide/cache.md).
 

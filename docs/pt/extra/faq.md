@@ -86,7 +86,7 @@ Use `app.Resource()`:
 
 ```go
 app.Resource("/users", &User{}, userRepo)
-// Generates: GET, GET/:id, POST, PATCH/:id, DELETE/:id (cache 5m by default)
+// Generates: GET, GET/:id, POST, PATCH/:id, DELETE/:id (no cache unless CacheTTL / SetCache)
 ```
 
 ## Middleware

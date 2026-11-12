@@ -25,6 +25,9 @@ type DB struct {
 	std     *sql.DB
 	gw      *gateway.Gateway
 	dialect dialect.Dialect
+	// txQueue serializes transactions on a SQLite file (nil otherwise),
+	// see InTx.
+	txQueue chan struct{}
 }
 
 // EnvDSN returns DATABASE_URL, then DB_DSN, then POSTGRES_DSN.
@@ -96,12 +99,16 @@ func Open(ctx context.Context, driver, dsn string, opts ...gateway.Option) (*DB,
 		_ = oteladapter.Ensure(os.Getenv("OTEL_SERVICE_NAME"))
 	}
 	gw := gateway.New(AdaptStdDB(std), withEnvQuiet(opts)...)
-	return &DB{
+	db := &DB{
 		Driver:  d,
 		std:     std,
 		gw:      gw,
 		dialect: dialectOf(d),
-	}, nil
+	}
+	if d == DriverSQLite && !isSQLiteMemory(dsn) {
+		db.txQueue = make(chan struct{}, 1)
+	}
+	return db, nil
 }
 
 // errMissingDSN explains the common trap of a .env file that was never

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
 // InTx runs fn inside a database transaction (domain.Transactor). Every Store
@@ -31,6 +33,24 @@ func (d *DB) InTx(ctx context.Context, fn func(ctx context.Context) error) error
 	gw := d.Gateway()
 	if gw == nil {
 		return fmt.Errorf("sqladapter: no pool")
+	}
+	// SQLite allows one write transaction at a time and every transaction
+	// here takes the write lock up front (_txlock=immediate). Left to
+	// SQLite, the waiters poll the lock with a back-off and no fairness, so
+	// under load one of them can lose every round until busy_timeout
+	// expires ("database is locked"). Queueing in Go hands the lock over in
+	// order; nothing is serialized that SQLite would run in parallel. A
+	// transaction already open on ctx is joined, not queued behind itself.
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if d.txQueue != nil && !domain.InTx(ctx) {
+		select {
+		case d.txQueue <- struct{}{}:
+			defer func() { <-d.txQueue }()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return gw.InTx(ctx, fn)
 }

@@ -1,6 +1,7 @@
 package nitro
 
 import (
+	"errors"
 	"time"
 )
 
@@ -54,5 +55,27 @@ func AppInfo(name, version string) Handler {
 // Info registers GET / with AppInfo(name, version).
 func (a *App) Info(name, version string) *App {
 	a.Get("/", AppInfo(name, version))
+	return a
+}
+
+// JWKSRoute registers GET path (conventionally /.well-known/jwks.json)
+// answering the provider's public keys as a JSON Web Key Set, so other
+// services can validate the tokens. Only public keys are published; an
+// HS256 provider yields an empty set.
+//
+//	app.JWKSRoute("/.well-known/jwks.json", jwtp)
+func (a *App) JWKSRoute(path string, provider interface{ JWKS() ([]byte, error) }, mws ...Handler) *App {
+	if provider == nil {
+		return a.fail(errors.New("nitro: JWKSRoute requires a provider created with JWTProviderWithKeys"))
+	}
+	a.Get(path, func(c *Ctx) error {
+		set, err := provider.JWKS()
+		if err != nil {
+			return err
+		}
+		// Short cache: clients pick up a rotated key within minutes.
+		c.SetHeader("Cache-Control", "public, max-age=300")
+		return c.Write(200, set)
+	}, mws...)
 	return a
 }

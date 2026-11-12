@@ -65,7 +65,7 @@ func TestBuildListQuery_FilterRules(t *testing.T) {
 		Filterable:  []string{"name"},
 		FilterRules: []FilterRule{{Param: "min_price", Field: "price", Op: "gte"}},
 	}
-	lq := buildListQuery(c, 1, 20, opts)
+	lq := buildListQuery(c, 1, 20, opts, nil)
 	if len(lq.Filters) != 2 {
 		t.Fatalf("%+v", lq.Filters)
 	}
@@ -91,7 +91,7 @@ func TestBuildListQuery_MaxFiltersAndValueLen(t *testing.T) {
 		MaxFilters:        2,
 		MaxFilterValueLen: 10,
 	}
-	lq := buildListQuery(c, 1, 20, opts)
+	lq := buildListQuery(c, 1, 20, opts, nil)
 	if len(lq.Filters) != 2 {
 		t.Fatalf("want 2 filters, got %+v", lq.Filters)
 	}

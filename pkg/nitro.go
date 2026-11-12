@@ -259,6 +259,30 @@ func JWTProvider(cfg AuthConfig) ports.TokenProvider {
 	return jwtadapter.MustNew(cfg)
 }
 
+// JWTKeys / JWTSigningKey configure asymmetric JWT signing (RS256, ES256 or
+// EdDSA) with key rotation — see JWTProviderWithKeys.
+type (
+	JWTKeys       = jwtadapter.Keys
+	JWTSigningKey = jwtadapter.SigningKey
+)
+
+// JWTProviderWithKeys returns a JWT provider that signs with an asymmetric
+// key instead of the shared HS256 secret (cfg.JWTSecret is ignored). Other
+// services validate tokens with the public keys from app.JWKSRoute and
+// cannot mint tokens themselves.
+//
+//	jwtp, err := nitro.JWTProviderWithKeys(cfg, nitro.JWTKeys{
+//		Signing: nitro.JWTSigningKey{ID: "2026-11", Key: privateKey},
+//	})
+//	auth := nitro.NewAuth(cfg).WithTokenProvider(jwtp).WithStore(users, users)
+//	app.JWKSRoute("/.well-known/jwks.json", jwtp)
+//
+// Rotate with jwtp.RotateSigningKey (the old key keeps validating) and drop
+// the old key with jwtp.RetireKey once its tokens have expired.
+func JWTProviderWithKeys(cfg AuthConfig, keys JWTKeys) (*jwtadapter.Provider, error) {
+	return jwtadapter.NewWithKeys(cfg, keys)
+}
+
 // MemorySessionStore creates an in-memory session store.
 func MemorySessionStore() SessionStore {
 	return sessionadapter.NewMemory()

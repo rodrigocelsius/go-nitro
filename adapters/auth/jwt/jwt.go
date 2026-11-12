@@ -27,8 +27,14 @@ type Provider struct {
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
 
-	storeMu sync.Mutex
-	store   RevocationStore // revoked JTIs (guarded by its own locking)
+	// keys is set by NewWithKeys (asymmetric signing); nil means HS256
+	// with secret.
+	keysMu sync.RWMutex
+	keys   *keyring
+
+	storeMu     sync.Mutex
+	store       RevocationStore // revoked JTIs (guarded by its own locking)
+	memoryStore bool            // store is the in-process default
 }
 
 // New creates a new JWT token provider.
@@ -37,6 +43,13 @@ func New(cfg domain.AuthConfig) (*Provider, error) {
 	if len(cfg.JWTSecret) < MinSecretLen {
 		return nil, fmt.Errorf("jwt: JWTSecret must be at least %d characters", MinSecretLen)
 	}
+	p := newProvider(cfg)
+	p.secret = []byte(cfg.JWTSecret)
+	return p, nil
+}
+
+// newProvider applies the configuration shared by New and NewWithKeys.
+func newProvider(cfg domain.AuthConfig) *Provider {
 	// Documented defaults (domain.AuthConfig): a zero TTL used to mint
 	// tokens that expired at issuance.
 	access, refresh := cfg.AccessTokenTTL, cfg.RefreshTokenTTL
@@ -47,13 +60,13 @@ func New(cfg domain.AuthConfig) (*Provider, error) {
 		refresh = DefaultRefreshTokenTTL
 	}
 	return &Provider{
-		secret:          []byte(cfg.JWTSecret),
 		issuer:          cfg.Issuer,
 		audience:        cfg.Audience,
 		accessTokenTTL:  access,
 		refreshTokenTTL: refresh,
 		store:           newMemoryStore(),
-	}, nil
+		memoryStore:     true,
+	}
 }
 
 // Default token lifetimes when AuthConfig leaves them zero.
@@ -100,21 +113,22 @@ func (p *Provider) claims(user *domain.User, ttl time.Duration, typ string) jwt.
 
 // GenerateAccessToken generates an access JWT.
 func (p *Provider) GenerateAccessToken(ctx context.Context, user *domain.User) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, p.claims(user, p.accessTokenTTL, "access"))
-	return token.SignedString(p.secret)
+	return p.sign(p.claims(user, p.accessTokenTTL, "access"))
 }
 
 // GenerateRefreshToken generates a refresh JWT.
 func (p *Provider) GenerateRefreshToken(ctx context.Context, user *domain.User) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, p.claims(user, p.refreshTokenTTL, "refresh"))
-	return token.SignedString(p.secret)
+	return p.sign(p.claims(user, p.refreshTokenTTL, "refresh"))
 }
 
-// parse validates a signed JWT: HS256 only, expiration required, issuer and
-// audience checked when configured. Returns ErrUnauthorized on any failure.
+// parse validates a signed JWT: only the provider's own algorithm(s) — HS256,
+// or the algorithms of the registered asymmetric keys — expiration required,
+// issuer and audience checked when configured. Returns ErrUnauthorized on
+// any failure.
 func (p *Provider) parse(tokenStr string) (jwt.MapClaims, error) {
+	methods, keyFunc := p.verification()
 	opts := []jwt.ParserOption{
-		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithValidMethods(methods),
 		jwt.WithExpirationRequired(),
 	}
 	if p.issuer != "" {
@@ -123,9 +137,7 @@ func (p *Provider) parse(tokenStr string) (jwt.MapClaims, error) {
 	if p.audience != "" {
 		opts = append(opts, jwt.WithAudience(p.audience))
 	}
-	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-		return p.secret, nil
-	}, opts...)
+	token, err := jwt.Parse(tokenStr, keyFunc, opts...)
 	if err != nil || !token.Valid {
 		return nil, domain.ErrUnauthorized
 	}

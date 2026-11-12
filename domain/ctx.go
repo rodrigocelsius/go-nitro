@@ -101,6 +101,20 @@ func (c *Ctx) QueryParam(key string) string {
 	return ""
 }
 
+// VisitQuery calls fn for every query-string argument, in request order
+// (repeated keys included). It reports false when the adapter cannot
+// enumerate them; fn is then never called.
+func (c *Ctx) VisitQuery(fn func(key, value string)) bool {
+	v, ok := c.AdapterData.(interface {
+		VisitQueryArgs(func(key, value string))
+	})
+	if !ok {
+		return false
+	}
+	v.VisitQueryArgs(fn)
+	return true
+}
+
 // HeaderParam returns a header as a string.
 func (c *Ctx) HeaderParam(key string) string {
 	if c.AdapterData == nil {

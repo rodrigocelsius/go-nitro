@@ -37,6 +37,9 @@ type ResourceListResult struct {
 	Page       int   `json:"page"`
 	PerPage    int   `json:"per_page"`
 	TotalPages int   `json:"total_pages"`
+	// NextCursor is set on Resources with cursor paging when there is a
+	// next page: pass it as ?cursor= to continue without OFFSET or COUNT.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // ListFilter is a filter from query string (?field=value).
@@ -53,12 +56,29 @@ type ListSort struct {
 	Desc  bool
 }
 
+// ListCursor is a keyset position: the row a page ended at.
+type ListCursor struct {
+	// Values are that row's values of the ListQuery.Sort fields, in order.
+	Values []string
+	// ID is that row's primary key (the final tiebreaker).
+	ID string
+}
+
 // ListQuery carries pagination + filters/sort for SQL push-down (BLinq).
 type ListQuery struct {
 	Page    int
 	PerPage int
 	Filters []ListFilter
 	Sort    []ListSort
+
+	// Keyset asks for cursor (keyset) paging instead of OFFSET: return up
+	// to PerPage rows ordered by Sort then primary key, starting after
+	// After (nil = from the first row), without counting the total. A
+	// repository that honors it answers with Page == 0; one that does not
+	// know keyset paging keeps answering Page >= 1 and the Resource
+	// rejects the cursor request instead of looping on the first page.
+	Keyset bool
+	After  *ListCursor
 }
 
 // QueryableLister is optional: Resource List pushes filters to the repo (BLinq/SQL)

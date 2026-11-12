@@ -94,6 +94,31 @@ func Pending(repo Repository) func(ctx context.Context, page nitro.Page) ([]mode
 
 `nitro.Page` comes from `?page=` and `?per_page=` (defaults 1 and 20).
 
+## List options: strict query and cursor paging
+
+```go
+app.Resource(&Order{}, store, &nitro.ResourceConfig{
+    Filterable:   []string{"status", "total"},
+    Sortable:     []string{"created_at", "total"},
+    DefaultSort:  "-created_at",
+    StrictQuery:  true, // unknown parameter / sort field → 400 instead of the unfiltered list
+    AllowQuery:   []string{"_ts"}, // extra parameters StrictQuery tolerates
+    CursorPaging: true,
+})
+```
+
+- **`StrictQuery`** — by default a parameter the Resource does not know is ignored, so `?staus=paid` (typo) answers the whole list. With `StrictQuery` it answers `400 {"code":"UNKNOWN_QUERY_PARAM"}`, and a `?sort` outside `Sortable` answers `400 {"code":"INVALID_SORT"}`.
+- **`CursorPaging`** — `?page=N` costs `OFFSET` + `COUNT(*)`, which grow with the table, and rows inserted while a client pages shift the pages (repeats / gaps). With `CursorPaging`, every list response carries `next_cursor` while there is a next page; send it back as `?cursor=<token>` (or start with `?cursor=start`) and the next page is a seek on `(sort columns, primary key)`:
+
+  ```text
+  GET /orders?per_page=50&sort=-created_at
+  → {"items":[…],"total":1200,"page":1,"per_page":50,"total_pages":24,"next_cursor":"eyJz…"}
+  GET /orders?per_page=50&sort=-created_at&cursor=eyJz…
+  → {"items":[…],"per_page":50,"next_cursor":"eyJ2…","has_more":true}
+  ```
+
+  A cursor is valid only with the `sort` it was issued for (`400 {"code":"INVALID_CURSOR"}` otherwise); filters and the tenant scope apply to every page. Sort columns must be `NOT NULL`, and an index on `(sort column, id)` keeps each page a short range scan. Works with BLinq stores and `MemoryRepo`.
+
 ## Multi-table writes
 
 With a BLinq repository every Command runs in **one transaction** by

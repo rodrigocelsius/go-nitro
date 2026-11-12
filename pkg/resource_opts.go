@@ -19,8 +19,13 @@ const (
 
 // ResourceConfig is the single public configuration for Resource (preferred over resourceOpts).
 type ResourceConfig struct {
-	// NoCache disables in-memory L1 cache (same as CacheTTL < 0).
-	NoCache        bool
+	// NoCache disables every Resource cache, including the read-through on
+	// the App cache (Config.Cache / SetCache).
+	NoCache bool
+	// CacheTTL turns on the per-process L1 cache for FindByID/List with that
+	// duration. Zero (default) = no per-process cache: each replica would
+	// keep its own copy, stale after a write on another replica. With an App
+	// cache configured, reads go through it (shared) without setting this.
 	CacheTTL       time.Duration
 	AutoID         *bool
 	AutoTimestamps *bool
@@ -42,6 +47,23 @@ type ResourceConfig struct {
 	MaxFilterValueLen int
 	// MaxInMemoryFetch caps in-memory filter/sort window (0 → 2_000).
 	MaxInMemoryFetch int
+
+	// StrictQuery answers 400 to a list request with a query parameter the
+	// Resource does not know (UNKNOWN_QUERY_PARAM) or a ?sort field outside
+	// Sortable (INVALID_SORT), instead of ignoring it — a typo in a filter
+	// name otherwise returns the unfiltered list.
+	StrictQuery bool
+	// AllowQuery lists extra query parameters StrictQuery tolerates
+	// (read by middlewares, cache busters, …).
+	AllowQuery []string
+	// CursorPaging turns on cursor (keyset) paging next to ?page: list
+	// responses carry next_cursor while there is a next page, and
+	// ?cursor=<token> (or ?cursor=start) continues from that row without
+	// OFFSET or COUNT — deep pages cost the same as the first one, and rows
+	// inserted while paging neither repeat nor go missing. The cursor
+	// response is {items, per_page, next_cursor, has_more}. Sort columns
+	// must be NOT NULL.
+	CursorPaging bool
 
 	Middleware      []Handler
 	ReadMiddleware  []Handler
@@ -189,6 +211,9 @@ func (c *ResourceConfig) toOpts() resourceOpts {
 	o.MaxFilters = c.MaxFilters
 	o.MaxFilterValueLen = c.MaxFilterValueLen
 	o.MaxInMemoryFetch = c.MaxInMemoryFetch
+	o.StrictQuery = c.StrictQuery
+	o.AllowQuery = append([]string(nil), c.AllowQuery...)
+	o.CursorPaging = c.CursorPaging
 	o.PatchMerge = c.PatchMerge
 	o.AcceptCamelQuery = c.AcceptCamelQuery
 	o.BeforeWrite = c.BeforeWrite

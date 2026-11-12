@@ -3,6 +3,7 @@ package nitro
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 type cacheOrder struct {
@@ -14,7 +15,7 @@ func TestResourceCache_TenantIsolationAndInvalidation(t *testing.T) {
 	app := New(Config{DisableDefaults: true, Env: EnvDevelopment})
 	allow := true
 	app.Use(TenantMiddleware(TenantConfig{Require: true, AllowHeader: &allow}))
-	app.Resource(&cacheOrder{}, NewMemoryRepo[cacheOrder](), &ResourceConfig{Public: true}) // cache ON (default 5m)
+	app.Resource(&cacheOrder{}, NewMemoryRepo[cacheOrder](), &ResourceConfig{Public: true, CacheTTL: time.Minute}) // per-process cache on
 	post := func(tn, body string) {
 		r, _ := app.TestWithHeaders("POST", "/cache_orders", strings.NewReader(body), map[string]string{"Content-Type": "application/json", "X-Tenant-ID": tn})
 		if r.StatusCode() != 201 {

@@ -30,7 +30,8 @@ return c.Attachment("report.pdf", pdfBytes)
 return c.CSV("drivers.csv", []string{"name", "phone"}, rows) // rows [][]string
 return c.File("report.csv", csvData)
 return c.File("report.csv", csvData, "inline")
-return c.Stream(fn)                  // SSE/CSV streaming — set Content-Type first if needed
+return c.Stream(fn)                  // builds the body in memory, sent when fn returns — set Content-Type first if needed
+return c.StreamBody(fn)              // fn(w *bufio.Writer) writes to the connection as it produces (chunked; w.Flush() sends) — large exports. fn runs after the handler: do not touch c inside it
 ```
 
 **Do not** build CSV + `Fasthttp().SetBody` by hand — use `c.CSV` / `c.Attachment`.

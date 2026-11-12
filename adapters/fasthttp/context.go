@@ -3,6 +3,7 @@
 package fasthttp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
@@ -1422,11 +1423,62 @@ func detectContentType(name string, data []byte) string {
 	return "application/octet-stream"
 }
 
-// Stream sends a data stream (SSE, CSV, etc).
+// Stream runs fn against the response body buffer: everything fn writes is
+// sent when it returns, as one response with a Content-Length. Use it to
+// build a body incrementally (CSV export of a bounded result); for data
+// that must reach the client while it is produced, use StreamBody.
 func (c *FastCtx) Stream(fn func(io.Writer) error) error {
 	fctx := c.FasthttpCtx()
 	w := fctx.Response.BodyWriter()
 	return fn(w)
+}
+
+// StreamBody streams the response: fn writes straight to the connection
+// (chunked transfer encoding) and each w.Flush() reaches the client at
+// once, so memory stays flat whatever the size of the body — large exports,
+// progress output, proxied downloads.
+//
+// Set status and headers before calling it. fn runs after the route handler
+// has returned, with two consequences (the same as SSEHandler):
+//
+//   - It must not touch the request *Ctx, which is recycled by then. Copy
+//     what it needs first, and use context.WithoutCancel(c.Context()) for a
+//     context that outlives the handler.
+//
+//   - Its error cannot change the status code, already sent. Returning an
+//     error ends the stream and closes the connection, so the client sees a
+//     truncated body instead of a complete one.
+//
+//     c.SetHeader("Content-Type", "text/csv")
+//     return c.StreamBody(func(w *bufio.Writer) error {
+//     for rows.Next() {
+//     fmt.Fprintln(w, rows.Line())
+//     }
+//     return rows.Err()
+//     })
+func (c *FastCtx) StreamBody(fn func(w *bufio.Writer) error) error {
+	fctx := c.FasthttpCtx()
+	fctx.SetBodyStreamWriter(func(w *bufio.Writer) {
+		if err := fn(w); err != nil {
+			// The headers are gone; the only honest signal left is an
+			// aborted chunked body.
+			fctx.SetConnectionClose()
+			if conn := fctx.Conn(); conn != nil {
+				_ = w.Flush()
+				_ = conn.Close()
+			}
+			return
+		}
+		_ = w.Flush()
+	})
+	return nil
+}
+
+// VisitQueryArgs calls fn for every query-string argument in request order.
+func (c *FastCtx) VisitQueryArgs(fn func(key, value string)) {
+	c.FasthttpCtx().QueryArgs().VisitAll(func(k, v []byte) {
+		fn(string(k), string(v))
+	})
 }
 
 // ── Error Responses (v1) ──────────────────────────────────

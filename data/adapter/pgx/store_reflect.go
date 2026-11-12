@@ -144,27 +144,30 @@ func (r *reflectRepo) ListQuery(ctx context.Context, lq domain.ListQuery) (*doma
 		fld := field.Col[any](r.table, col)
 		q = q.Where(filterPred(fld, f.Op, val, f.Value))
 	}
-	sortedByID := false
-	for _, s := range lq.Sort {
-		col, ok := r.jsonToDB[s.Field]
-		if !ok {
-			continue
+	q, keys := orderForList(q, r.table, r.idCol, r.jsonToDB, r.dbTypes, lq)
+	if lq.Keyset {
+		// Cursor paging: seek past the previous page instead of OFFSET,
+		// and no COUNT.
+		pred, ok, err := keysetAfter(r.table, keys, r.dbTypes, lq.After)
+		if err != nil {
+			return nil, err
 		}
-		if col == r.idCol {
-			sortedByID = true
+		if ok {
+			q = q.Where(pred)
 		}
-		ord := field.Col[any](r.table, col)
-		if s.Desc {
-			q = q.OrderBy(ord.OrderDesc())
-		} else {
-			q = q.OrderBy(ord.OrderAsc())
+		rows, err := r.api.Select(ctx, q.Limit(uint64(per)).AST())
+		if err != nil {
+			return nil, err
 		}
-	}
-	// Deterministic pages: without a unique tiebreaker the database may
-	// return rows in any order (and repeat or skip rows across pages when
-	// the sort column has duplicates). The primary key is always last.
-	if _, hasID := r.dbTypes[r.idCol]; hasID && !sortedByID {
-		q = q.OrderBy(field.Col[any](r.table, r.idCol).OrderAsc())
+		items := make([]any, 0, len(rows))
+		for _, row := range rows {
+			ptr := r.newPtr()
+			if err := scan.MapToStruct(row, ptr); err != nil {
+				return nil, err
+			}
+			items = append(items, ptr)
+		}
+		return &domain.ResourceListResult{Items: items, PerPage: per}, nil
 	}
 	q = q.Paginate(uint64(page), uint64(per))
 

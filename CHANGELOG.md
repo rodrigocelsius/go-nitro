@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Asymmetric JWT with key rotation.** `nitro.JWTProviderWithKeys(cfg, nitro.JWTKeys{Signing: …})` signs with RSA (RS256, ≥ 2048 bits), ECDSA P-256 (ES256) or Ed25519 (EdDSA) instead of the shared HS256 secret; tokens carry `kid`. `RotateSigningKey` switches keys while the old one keeps validating, `RetireKey` drops it, and `app.JWKSRoute("/.well-known/jwks.json", provider)` publishes the public keys. A token with an unknown `kid`, or an algorithm other than the one registered for its key, is rejected.
+- **Per-account login limit.** `/login` of `AuthRoutes` / `KeycloakAuthRoutes` answers 429 (`TOO_MANY_ATTEMPTS`, with `Retry-After`) after 10 failed attempts for one account in 15 minutes, whatever the client IP; a successful login clears the count. `auth.WithAccountRateLimit(max, window)` tunes or disables it.
+- **Cursor (keyset) paging** — `ResourceConfig.CursorPaging`: list responses carry `next_cursor`, and `?cursor=<token>` (or `?cursor=start`) continues with a seek on `(sort columns, primary key)` instead of `OFFSET` + `COUNT(*)`. BLinq stores and `MemoryRepo`; `domain.ListQuery.Keyset` / `After` for custom repositories.
+- **Strict list queries** — `ResourceConfig.StrictQuery`: an unknown query parameter answers 400 `UNKNOWN_QUERY_PARAM` and a `?sort` outside `Sortable` answers 400 `INVALID_SORT`, instead of being ignored (`AllowQuery` lists tolerated extras).
+- **HTTP/2** — `app.ListenHTTP2(addr, certFile, keyFile)` serves the app over HTTP/2 and HTTP/1.1 through Go's `net/http` (TLS with ALPN, or cleartext h2c with empty cert/key); `app.NetHTTPHandler()` exposes the same bridge as an `http.Handler`. Request bodies are buffered and WebSocket upgrades are unavailable on the bridge.
+- **`c.StreamBody(fn)`** streams the response to the connection while `fn` produces it (chunked, `w.Flush()` sends); `c.Stream` keeps building the body in memory.
+- `c.VisitQuery(fn)` on `domain.Ctx` enumerates the query string.
+- In production, `AuthRoutes` warns when JWT revocations are kept in memory (`provider.UsesMemoryRevocation()`).
 - `nitro.ErrAbort` / `c.Abort()`: a pre-middleware that already wrote its response stops the pipeline without the framework touching status or body.
 - `c.OnDone(fn)`: cleanup that runs when the request finishes (also on panic) — pre-middlewares cannot wrap the handler.
 - `Config.Server` (`nitro.ServerConfig`): `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadBufferSize`, `WriteBufferSize`, `Concurrency`, `MaxConnsPerIP`, `StreamRequestBody`. These were hard-coded.
@@ -22,10 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `ShutdownWithContext` leaked a goroutine and left connections open when the context expired; it now delegates to fasthttp's own context-aware shutdown.
 
 - **Timeout no longer discards a completed response.** A handler that finished and wrote its response after the deadline had it replaced by the timeout error, although its side effects had happened (a client retrying the POST would repeat them). The response is now kept; the 503 replaces only a context error, a generic error or no response at all. The post-middlewares also see that 503: the access log and the tracing span used to record a 200/500 the client never received.
+- SQLite: concurrent transactions on a file database could fail with "database is locked" under load — SQLite's lock wait is a back-off poll with no fairness, so one writer could lose every round until `busy_timeout` expired. Transactions now queue in order inside the adapter.
 - A panic inside a post-middleware ran the earlier post-middlewares a second time (duplicate access-log line and metrics). Only the ones that had not started run after the panic.
 - **Linear router** (`Config.UseLinearRouter`): `c.Route()` returned the concrete path (`/users/1`) instead of the template (`/users/:id`), so tracing and metrics labels had unbounded cardinality; a pattern that failed halfway left its captured parameters behind; and `/users/` (what `Group("/users").Get("/")` registers) did not answer `/users` as it does on the default router. In both routers the trailing slash of a registered route is now optional, also for dynamic routes (`/users/:id/` answers `/users/1` and `/users/1/`).
 
 ### Changed
+- **The per-process Resource cache is now opt-in.** A Resource used to cache `GET /:id` and list pages in memory for 5 minutes unless told otherwise, so with several replicas — or writes made outside the Resource — reads were stale without anyone having asked for a cache. It is now on only with `ResourceConfig.CacheTTL`. The shared read-through on the App cache (`SetCache` / `Config.Cache`) is unchanged. **Behavior change:** set `CacheTTL: 5 * time.Minute` to keep the previous behavior.
 - A request that exceeds `Config.RequestTimeout` / `app.Timeout` answers **503** instead of 408 (408 means the *client* was slow to send the request).
 
 ### Security
@@ -44,6 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Security headers.** `Permissions-Policy: none` is not valid syntax, so browsers ignored it; the default now denies camera, microphone, geolocation, payment and usb (`SecurityConfig.PermissionsPolicy` overrides it). `X-XSS-Protection` is `0` instead of `1; mode=block`, which could be abused for cross-site leaks (OWASP recommendation).
 
 ### Performance
+- Resource list: the query string is read in one pass against the Resource's precomputed parameter names, instead of up to 21 lookups per filterable field (7 operators × 3 spellings).
 - Request ID: a byte loop replaces the per-request regexp, and the response header is written with a pre-canonical key.
 - `ClientIP` / `Protocol` no longer format the peer IP and parse it back on every call.
 - CORS: no `url.Parse` per request; header values are built once.

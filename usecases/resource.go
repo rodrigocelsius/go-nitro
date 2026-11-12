@@ -63,8 +63,23 @@ type ResourceOpts struct {
 	// MaxInMemoryFetch caps the window fetched before in-memory filter/sort (0 → 2_000).
 	MaxInMemoryFetch int
 
+	// StrictQuery rejects list requests carrying a query parameter the
+	// Resource does not know, or a ?sort field outside Sortable, with 400
+	// instead of ignoring it. Off by default: a typo then returns the
+	// unfiltered list.
+	StrictQuery bool
+	// AllowQuery lists extra query parameters StrictQuery tolerates
+	// (parameters read by middlewares, cache busters, …).
+	AllowQuery []string
+	// CursorPaging turns on cursor (keyset) paging: list responses carry
+	// next_cursor while there is a next page, and ?cursor=<token> (or
+	// ?cursor=start) continues from that row without OFFSET or COUNT, so
+	// deep pages cost the same as the first one and rows inserted while
+	// paging neither repeat nor go missing. Sort columns must be NOT NULL.
+	CursorPaging bool
+
 	// CacheTTL is the in-memory FindByID/List cache duration.
-	// Zero → default 5m (applied by pkg). Negative → disables cache.
+	// Zero or negative → no per-process cache (opt-in).
 	CacheTTL time.Duration
 	// PatchMerge (default true) unmarshals PATCH onto the existing entity.
 	PatchMerge *bool
@@ -131,12 +146,12 @@ const (
 	DefaultListMaxInMemory  = 2_000
 )
 
-// DefaultResourceOpts returns opts with AutoID, AutoTimestamps, and default cache on.
+// DefaultResourceOpts returns opts with AutoID and AutoTimestamps on. The
+// per-process cache is off unless CacheTTL is set.
 func DefaultResourceOpts() ResourceOpts {
 	return ResourceOpts{
 		AutoID:         true,
 		AutoTimestamps: true,
-		CacheTTL:       5 * time.Minute,
 	}
 }
 
@@ -315,8 +330,21 @@ func withRequestContext(h domain.Handler) domain.Handler {
 }
 
 func makeListHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts ResourceOpts) domain.Handler {
+	idx := newListIndex(opts)
+	idField := resourceIDField(meta)
 	return func(c *domain.Ctx) error {
+		if opts.StrictQuery {
+			if err := idx.validate(c, opts); err != nil {
+				return err
+			}
+		}
 		page, perPage := clampListPagination(c, opts)
+
+		// ?cursor= switches the request to keyset paging.
+		cursorTok := ""
+		if opts.CursorPaging {
+			cursorTok = c.QueryParam("cursor")
+		}
 
 		var tenantID any
 		var tenantCol string
@@ -325,6 +353,9 @@ func makeListHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts
 			var ok bool
 			tenantID, tenantCol, ok = resolveTenantScope(c, opts)
 			if !ok {
+				if cursorTok != "" {
+					return respondJSON(c, 200, &cursorPage{Items: []any{}, PerPage: perPage})
+				}
 				return respondJSON(c, 200, &domain.ResourceListResult{Items: []any{}, Page: page, PerPage: perPage, Total: 0})
 			}
 			hasTenant = true
@@ -332,19 +363,42 @@ func makeListHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts
 
 		// BLinq/SQL push-down when the repo implements QueryableLister.
 		if ql, ok := repo.(domain.QueryableLister); ok {
-			lq := buildListQuery(c, page, perPage, opts)
+			lq := buildListQuery(c, page, perPage, opts, idx)
+			sorts := lq.Sort
 			if hasTenant {
 				injectTenantFilter(&lq, tenantCol, tenantID)
+			}
+			if cursorTok != "" {
+				after, err := decodeCursor(cursorTok, sorts)
+				if err != nil {
+					return err
+				}
+				// One row past the page tells whether another page exists.
+				lq.Keyset, lq.After, lq.Page, lq.PerPage = true, after, 1, perPage+1
+				result, err := ql.ListQuery(c.Context(), lq)
+				if err != nil {
+					return mapRepoError(err, meta.TableName+": list failed")
+				}
+				if result == nil || result.Page != 0 {
+					return &domain.CodedError{Status: 400, Code: "CURSOR_UNSUPPORTED", Message: "this resource does not support cursor paging"}
+				}
+				return respondJSON(c, 200, newCursorPage(result.Items, perPage, sorts, idField, true))
 			}
 			result, err := ql.ListQuery(c.Context(), lq)
 			if err != nil {
 				return mapRepoError(err, meta.TableName+": list failed")
 			}
+			if opts.CursorPaging && result != nil && result.Page < result.TotalPages && len(result.Items) > 0 {
+				// The result may be shared with a cache: annotate a copy.
+				withCursor := *result
+				withCursor.NextCursor = nextCursor(result.Items[len(result.Items)-1], sorts, idField, true)
+				result = &withCursor
+			}
 			return respondJSON(c, 200, result)
 		}
 
 		fetchPage, fetchPer := page, perPage
-		needPost := len(opts.Filterable) > 0 || len(opts.FilterRules) > 0 || len(opts.Sortable) > 0 || hasTenant
+		needPost := len(opts.Filterable) > 0 || len(opts.FilterRules) > 0 || len(opts.Sortable) > 0 || hasTenant || opts.CursorPaging
 		if needPost {
 			// Fetch a bounded window then filter/sort/paginate in-memory (MemoryRepo / small datasets).
 			fetchPage, fetchPer = 1, effectiveMaxInMemory(opts)
@@ -361,12 +415,60 @@ func makeListHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts
 				items = filterItemsByTenant(items, tenantCol, tenantID)
 			}
 			items = filterItemsOpts(c, items, opts)
-			items = sortItems(c, items, opts.Sortable, opts.DefaultSort)
+			if !opts.CursorPaging {
+				items = sortItems(c, items, opts.Sortable, opts.DefaultSort)
+				return respondJSON(c, 200, paginateAnyItems(items, page, perPage))
+			}
+
+			// Cursor paging needs a total order: sort fields, then the id.
+			sorts := buildListQuery(c, 1, 1, opts, idx).Sort
+			items = append([]any(nil), items...)
+			sortItemsKeyset(items, sorts, idField)
+			if cursorTok != "" {
+				after, err := decodeCursor(cursorTok, sorts)
+				if err != nil {
+					return err
+				}
+				pageItems, more := pageAfter(items, after, sorts, idField, perPage)
+				out := &cursorPage{Items: pageItems, PerPage: perPage, HasMore: more}
+				if more {
+					out.NextCursor = nextCursor(pageItems[len(pageItems)-1], sorts, idField, false)
+				}
+				return respondJSON(c, 200, out)
+			}
 			result = paginateAnyItems(items, page, perPage)
+			if result.Page < result.TotalPages && len(result.Items) > 0 {
+				result.NextCursor = nextCursor(result.Items[len(result.Items)-1], sorts, idField, false)
+			}
 		}
 
 		return respondJSON(c, 200, result)
 	}
+}
+
+// newCursorPage trims a keyset result fetched with one extra row down to
+// perPage items. It never modifies items, which may be shared with a cache.
+func newCursorPage(items []any, perPage int, sorts []domain.ListSort, idField string, wire bool) *cursorPage {
+	out := &cursorPage{Items: items, PerPage: perPage}
+	if len(items) > perPage {
+		out.Items = items[:perPage:perPage]
+		out.HasMore = true
+		out.NextCursor = nextCursor(out.Items[perPage-1], sorts, idField, wire)
+	}
+	if out.Items == nil {
+		out.Items = []any{}
+	}
+	return out
+}
+
+// resourceIDField is the JSON name of the model's primary key.
+func resourceIDField(meta ResourceMetadata) string {
+	for _, f := range meta.Fields {
+		if f.IsID && f.JSONName != "" && f.JSONName != "-" {
+			return f.JSONName
+		}
+	}
+	return "id"
 }
 
 func makeGetHandler(meta ResourceMetadata, repo domain.ResourceRepository, opts ResourceOpts) domain.Handler {

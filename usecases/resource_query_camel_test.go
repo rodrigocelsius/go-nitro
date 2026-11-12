@@ -11,7 +11,7 @@ func TestBuildListQuery_CamelCaseAlias(t *testing.T) {
 	opts := ResourceOpts{
 		FilterRules: []FilterRule{{Param: "artist_id", Field: "artist_id", Op: "eq"}},
 	}
-	lq := buildListQuery(c, 1, 20, opts)
+	lq := buildListQuery(c, 1, 20, opts, nil)
 	if len(lq.Filters) != 1 {
 		t.Fatalf("filters=%+v", lq.Filters)
 	}
@@ -23,7 +23,7 @@ func TestBuildListQuery_CamelCaseAlias(t *testing.T) {
 func TestBuildListQuery_SortCamelCase(t *testing.T) {
 	c := &domain.Ctx{AdapterData: queryMap{"sort": "-createdAt"}}
 	opts := ResourceOpts{Sortable: []string{"created_at"}}
-	lq := buildListQuery(c, 1, 20, opts)
+	lq := buildListQuery(c, 1, 20, opts, nil)
 	if len(lq.Sort) != 1 || lq.Sort[0].Field != "created_at" || !lq.Sort[0].Desc {
 		t.Fatalf("%+v", lq.Sort)
 	}

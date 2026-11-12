@@ -122,7 +122,18 @@ func (p *Provider) SetRevocationStore(s RevocationStore) {
 	defer p.storeMu.Unlock()
 	if s == nil {
 		p.store = newMemoryStore()
+		p.memoryStore = true
 		return
 	}
 	p.store = s
+	p.memoryStore = false
+}
+
+// UsesMemoryRevocation reports whether revocations are kept in this process
+// only (the default). With more than one replica a logout or a rotated
+// refresh token is then not seen by the others — see RevocationStore.
+func (p *Provider) UsesMemoryRevocation() bool {
+	p.storeMu.Lock()
+	defer p.storeMu.Unlock()
+	return p.memoryStore
 }

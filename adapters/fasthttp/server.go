@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -60,6 +61,7 @@ type App struct {
 	maxRequestBodySize    int
 	debug                 bool
 	serverCfg             domain.ServerConfig
+	stdServer             *http.Server // net/http server of ListenHTTP2 (guarded by srvMu)
 }
 
 // DefaultMaxRequestBodySize matches fasthttp's own built-in default (4 MiB)
@@ -599,6 +601,9 @@ func (a *App) Shutdown() error {
 	if srv := a.currentServer(); srv != nil {
 		err = srv.Shutdown()
 	}
+	if stdErr := a.shutdownStdServer(context.Background()); err == nil {
+		err = stdErr
+	}
 	a.fireOnShutdown()
 	return err
 }
@@ -650,6 +655,9 @@ func (a *App) ShutdownWithContext(ctx context.Context) error {
 	if srv := a.currentServer(); srv != nil {
 		err = srv.ShutdownWithContext(ctx)
 	}
+	if stdErr := a.shutdownStdServer(ctx); err == nil {
+		err = stdErr
+	}
 	a.fireOnShutdown()
 	return err
 }
@@ -668,6 +676,11 @@ func (a *App) ListenWithGracefulShutdownTLS(addr, certFile, keyFile string, cfg 
 // ListenWithGracefulShutdownAutoTLS is ListenAutoTLS with signal-based graceful shutdown.
 func (a *App) ListenWithGracefulShutdownAutoTLS(addr string, domains []string, cfg ...GracefulShutdownConfig) error {
 	return a.listenWithSignals(func() error { return a.ListenAutoTLS(addr, domains...) }, cfg...)
+}
+
+// ListenWithGracefulShutdownHTTP2 is ListenHTTP2 with signal-based graceful shutdown.
+func (a *App) ListenWithGracefulShutdownHTTP2(addr, certFile, keyFile string, cfg ...GracefulShutdownConfig) error {
+	return a.listenWithSignals(func() error { return a.ListenHTTP2(addr, certFile, keyFile) }, cfg...)
 }
 
 func (a *App) listenWithSignals(start func() error, cfg ...GracefulShutdownConfig) error {

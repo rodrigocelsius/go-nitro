@@ -14,7 +14,9 @@ import (
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
 )
 
-// DefaultCacheTTL is the cache duration applied by Resource when CacheTTL is unset.
+// DefaultCacheTTL is the cache duration of the shared (App cache)
+// read-through and of CacheRepo / cache Set calls given no TTL. The
+// per-process Resource cache has no default: set ResourceConfig.CacheTTL.
 const DefaultCacheTTL = 5 * time.Minute
 
 // defaultCacheMaxEntries bounds the per-repo entry count. When exceeded,
@@ -80,21 +82,18 @@ func IsCacheRepo(repo domain.ResourceRepository) bool {
 	}
 }
 
-// applyResourceCache wraps repo with CacheRepo using opts.CacheTTL.
-// Negative CacheTTL disables cache. Zero uses DefaultCacheTTL.
+// applyResourceCache wraps repo with CacheRepo when opts.CacheTTL is
+// positive. The per-process cache is opt-in: with several replicas (or
+// writes outside the Resource) it serves stale rows nobody asked for.
 // Skips wrap if repo is already a CacheRepo.
 func applyResourceCache(repo domain.ResourceRepository, opts resourceOpts) domain.ResourceRepository {
 	if repo == nil || IsCacheRepo(repo) {
 		return repo
 	}
-	ttl := opts.CacheTTL
-	if ttl < 0 {
+	if opts.CacheTTL <= 0 {
 		return repo
 	}
-	if ttl == 0 {
-		ttl = DefaultCacheTTL
-	}
-	return CacheRepo(repo, ttl)
+	return CacheRepo(repo, opts.CacheTTL)
 }
 
 // InTx forwards domain.Transactor to the inner repository.
@@ -200,6 +199,17 @@ func listQueryCacheKey(q domain.ListQuery) string {
 			b.WriteByte('a')
 		}
 		part(s.Field)
+	}
+	// Keyset pages are different results from offset pages, and each
+	// cursor position is its own page.
+	if q.Keyset {
+		b.WriteByte('k')
+		if q.After != nil {
+			part(q.After.ID)
+			for _, v := range q.After.Values {
+				part(v)
+			}
+		}
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return "lq:" + hex.EncodeToString(sum[:])

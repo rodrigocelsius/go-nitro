@@ -23,11 +23,11 @@ func (r *cacheProbeRepo) Create(ctx context.Context, entity any) error { return 
 func (r *cacheProbeRepo) Update(ctx context.Context, entity any) error { return nil }
 func (r *cacheProbeRepo) Delete(ctx context.Context, id any) error     { return nil }
 
-func TestApplyResourceCache_Default(t *testing.T) {
+func TestApplyResourceCache_OptIn(t *testing.T) {
 	inner := &cacheProbeRepo{}
-	wrapped := applyResourceCache(inner, (&ResourceConfig{}).toOpts())
+	wrapped := applyResourceCache(inner, (&ResourceConfig{CacheTTL: time.Minute}).toOpts())
 	if !IsCacheRepo(wrapped) {
-		t.Fatal("expected default cache wrap")
+		t.Fatal("expected cache wrap with CacheTTL")
 	}
 	_, _ = wrapped.FindByID(context.Background(), "1")
 	_, _ = wrapped.FindByID(context.Background(), "1")
@@ -53,11 +53,27 @@ func TestApplyResourceCache_AlreadyCached(t *testing.T) {
 	}
 }
 
-func TestResourceConfig_ZeroCacheTTLUsesDefault(t *testing.T) {
+// The per-process cache is opt-in: no CacheTTL, no cache.
+func TestResourceConfig_ZeroCacheTTLMeansNoCache(t *testing.T) {
 	o := (&ResourceConfig{}).toOpts()
-	if o.CacheTTL != DefaultCacheTTL {
-		t.Fatalf("CacheTTL = %v, want %v", o.CacheTTL, DefaultCacheTTL)
+	if o.CacheTTL != 0 {
+		t.Fatalf("CacheTTL = %v, want 0", o.CacheTTL)
 	}
+	repo := AdaptRepo(NewMemoryRepo[cacheOptInItem]())
+	if IsCacheRepo(applyResourceCache(repo, o)) {
+		t.Fatal("Resource without CacheTTL must not be cached")
+	}
+	if !IsCacheRepo(applyResourceCache(repo, (&ResourceConfig{CacheTTL: time.Minute}).toOpts())) {
+		t.Fatal("CacheTTL must turn the cache on")
+	}
+	if IsCacheRepo(applyResourceCache(repo, (&ResourceConfig{CacheTTL: time.Minute, NoCache: true}).toOpts())) {
+		t.Fatal("NoCache wins over CacheTTL")
+	}
+}
+
+type cacheOptInItem struct {
+	Model
+	Name string `json:"name"`
 }
 
 type cacheCountRepo struct {
