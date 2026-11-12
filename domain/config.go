@@ -110,7 +110,9 @@ type ServerConfig struct {
 	MaxConnsPerIP int
 	// StreamRequestBody hands large request bodies to the handler as a
 	// stream (fasthttp RequestCtx.RequestBodyStream) instead of buffering
-	// them in memory first.
+	// them in memory first. The body limit still applies: a Content-Length
+	// over it is refused up front, and a chunked body fails with 413 once
+	// the handler has read that many bytes.
 	StreamRequestBody bool
 }
 
@@ -142,7 +144,9 @@ type Config struct {
 	Security SecurityConfig
 
 	// RequestTimeout is the maximum execution time per request.
-	// Requests that exceed this limit receive status 503.
+	// A request that runs past it and ends with a context error, a generic
+	// error or no response receives status 503; a response the handler did
+	// write is kept.
 	// Zero (default) means no timeout.
 	RequestTimeout time.Duration
 

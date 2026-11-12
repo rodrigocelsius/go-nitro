@@ -49,7 +49,20 @@ type Ctx struct {
 	// route is the matched route template (LocalHTTPRoute). Kept out of the
 	// locals map so the hot path never allocates one.
 	route string
+
+	// postIndex is how many post-middlewares have started for this request
+	// (see PostIndex).
+	postIndex int
 }
+
+// PostIndex reports how many post-middlewares have already started for this
+// request. The adapter uses it after a panic to run only the ones that have
+// not run yet, so an access log or a metric is never recorded twice.
+func (c *Ctx) PostIndex() int { return c.postIndex }
+
+// SetPostIndex records post-middleware progress (called by the compiled
+// pipeline; not meant for application code).
+func (c *Ctx) SetPostIndex(i int) { c.postIndex = i }
 
 // Param returns the route parameter value for the given name, or an empty
 // string if it does not exist. Linear search on the fixed array — for
@@ -297,6 +310,7 @@ func (c *Ctx) ResetHot() {
 	c.span = nil
 	c.status = 0
 	c.route = ""
+	c.postIndex = 0
 	if c.locals != nil {
 		clear(c.locals) // keep capacity: no map re-allocation per request
 	}

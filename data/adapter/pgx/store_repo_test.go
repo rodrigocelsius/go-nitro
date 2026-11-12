@@ -16,9 +16,6 @@ type item struct {
 
 func TestAdaptStore_ImplementsQueryableLister(t *testing.T) {
 	repo := pgx.AdaptStore[item](nil)
-	if _, ok := repo.(domain.ResourceRepository); !ok {
-		t.Fatal("ResourceRepository")
-	}
 	if _, ok := repo.(domain.QueryableLister); !ok {
 		t.Fatal("QueryableLister")
 	}

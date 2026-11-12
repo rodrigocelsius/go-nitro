@@ -136,7 +136,7 @@ func TestGroupMethods(t *testing.T) {
 		}
 	}
 
-	for method, _ := range methods {
+	for method := range methods {
 		ctx := &fasthttp.RequestCtx{}
 		ctx.Request.SetRequestURI("/api/test")
 		ctx.Request.Header.SetMethod(method)

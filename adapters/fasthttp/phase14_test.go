@@ -329,10 +329,10 @@ func TestFastCtx_SetRequestContext_Replaces(t *testing.T) {
 	fctx := &fasthttp.RequestCtx{}
 	fc.Reset(fctx)
 
-	ctx1 := context.WithValue(context.Background(), "key", "val1")
+	ctx1 := context.WithValue(context.Background(), phase14CtxKey{}, "val1")
 	fc.SetRequestContext(ctx1)
 
-	ctx2 := context.WithValue(context.Background(), "key", "val2")
+	ctx2 := context.WithValue(context.Background(), phase14CtxKey{}, "val2")
 	fc.SetRequestContext(ctx2)
 
 	if fc.RequestContext() != ctx2 {
@@ -445,3 +445,6 @@ func TestFastWS_WriteJSON_viaHub(t *testing.T) {
 		t.Errorf("Msg = %q, want hi", result.Msg)
 	}
 }
+
+// phase14CtxKey is a private context key type (SA1029).
+type phase14CtxKey struct{}

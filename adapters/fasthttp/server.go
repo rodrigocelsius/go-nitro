@@ -209,7 +209,7 @@ func (a *App) add(method, path string, handler domain.Handler, routeMws []domain
 		routeMws = wrappedRoute
 	}
 
-	compiled := usecases.CompileHandler(handler, globalPre, a.globalPost, routeMws)
+	compiled := usecases.CompileHandler(timeoutAware(handler), globalPre, a.globalPost, routeMws)
 	var route *Route
 	if a.useLinear {
 		a.routes = append(a.routes, domain.LinearRoute{Method: method, Path: path, Handler: compiled})
@@ -285,7 +285,6 @@ func (a *App) Handler() func(fctx *fasthttp.RequestCtx) {
 		if err := h(&c.Ctx); err != nil {
 			a.handleError(&c.Ctx, err)
 		}
-		c.writeTimeoutIfExceeded()
 	}
 }
 
@@ -311,8 +310,10 @@ func (a *App) handlePanic(c *FastCtx, r any, post []domain.Handler) {
 	fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
 	fctx.SetBody(a.recoverBody(r, stack))
 
-	for _, h := range post {
-		runPostSafe(h, &c.Ctx)
+	// Only the post-middlewares that have not started yet: when the panic
+	// came from a post-middleware, the ones before it already ran.
+	for i := c.Ctx.PostIndex(); i < len(post); i++ {
+		runPostSafe(post[i], &c.Ctx)
 	}
 }
 

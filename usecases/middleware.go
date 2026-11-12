@@ -45,7 +45,10 @@ func CompileHandler(handler domain.Handler, globalPre, globalPost, routeMws []do
 }
 
 func runPost(post []domain.Handler, c *domain.Ctx) {
-	for _, h := range post {
+	for i, h := range post {
+		// Progress is recorded before the call: if h panics, the adapter
+		// resumes after it instead of running the whole chain again.
+		c.SetPostIndex(i + 1)
 		_ = h(c)
 	}
 }

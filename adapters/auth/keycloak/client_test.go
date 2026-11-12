@@ -47,7 +47,7 @@ func TestClient_LoginRefreshLogout(t *testing.T) {
 		t.Fatalf("login %#v grant=%s", tr, gotGrant)
 	}
 
-	tr, err = c.Refresh(context.Background(), "refresh")
+	_, err = c.Refresh(context.Background(), "refresh")
 	if err != nil {
 		t.Fatal(err)
 	}

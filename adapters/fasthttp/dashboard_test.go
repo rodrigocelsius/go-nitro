@@ -109,7 +109,7 @@ func TestDashboardDataHandler_MiddlewareMetrics(t *testing.T) {
 	}
 
 	// No middleware registered yet
-	if data.Middleware != nil && len(data.Middleware) > 0 {
+	if len(data.Middleware) > 0 {
 		t.Error("expected no middleware metrics when none registered")
 	}
 }

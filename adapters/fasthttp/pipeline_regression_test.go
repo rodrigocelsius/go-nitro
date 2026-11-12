@@ -139,3 +139,117 @@ func TestServerConfig_Defaults(t *testing.T) {
 		t.Fatalf("overrides not applied: %+v", srv)
 	}
 }
+
+// A handler that finished its work and wrote a response after the deadline
+// keeps that response (a 503 would make the client repeat a POST that
+// succeeded), and the post-middlewares see the status the client receives.
+func TestTimeout_KeepsCompletedResponse(t *testing.T) {
+	app := New(domain.Config{RequestTimeout: 10 * time.Millisecond})
+	postStatus := 0
+	app.UsePost(func(c *domain.Ctx) error {
+		postStatus = c.AdapterData.(*FastCtx).FasthttpCtx().Response.StatusCode()
+		return nil
+	})
+	app.Post("/pay", func(c *domain.Ctx) error {
+		time.Sleep(30 * time.Millisecond)
+		return c.AdapterData.(*FastCtx).JSON(200, map[string]string{"charged": "yes"})
+	})
+	resp, _ := app.Test("POST", "/pay", strings.NewReader("{}"))
+	if resp.StatusCode() != 200 || postStatus != 200 || !strings.Contains(string(resp.Body()), "charged") {
+		t.Fatalf("status=%d postStatus=%d body=%s", resp.StatusCode(), postStatus, resp.Body())
+	}
+}
+
+// The 503 of a missed deadline is known before the post-middlewares run, so
+// the access log does not record a 200/500 the client never saw.
+func TestTimeout_PostMiddlewareSees503(t *testing.T) {
+	for name, h := range map[string]domain.Handler{
+		"context error": func(c *domain.Ctx) error { <-c.Context().Done(); return c.Context().Err() },
+		"no response":   func(c *domain.Ctx) error { <-c.Context().Done(); return nil },
+	} {
+		app := New(domain.Config{RequestTimeout: 10 * time.Millisecond})
+		postStatus := 0
+		app.UsePost(func(c *domain.Ctx) error {
+			postStatus = c.AdapterData.(*FastCtx).FasthttpCtx().Response.StatusCode()
+			return nil
+		})
+		app.Get("/slow", h)
+		resp, _ := app.Test("GET", "/slow", nil)
+		if resp.StatusCode() != 503 || postStatus != 503 || !strings.Contains(string(resp.Body()), "request timeout") {
+			t.Errorf("%s: status=%d postStatus=%d body=%s", name, resp.StatusCode(), postStatus, resp.Body())
+		}
+	}
+}
+
+// An HTTP error chosen by the handler is not rewritten into a 503.
+func TestTimeout_KeepsHTTPError(t *testing.T) {
+	app := New(domain.Config{RequestTimeout: 10 * time.Millisecond})
+	app.Get("/x", func(c *domain.Ctx) error {
+		time.Sleep(30 * time.Millisecond)
+		return domain.ErrNotFound
+	})
+	resp, _ := app.Test("GET", "/x", nil)
+	if resp.StatusCode() != 404 {
+		t.Fatalf("status = %d, want 404", resp.StatusCode())
+	}
+}
+
+// A panic inside a post-middleware must not run the earlier ones again.
+func TestPanic_InPostMiddlewareDoesNotRerunPrevious(t *testing.T) {
+	app := New()
+	first, last := 0, 0
+	app.UsePost(func(c *domain.Ctx) error { first++; return nil })
+	app.UsePost(func(c *domain.Ctx) error { panic("post boom") })
+	app.UsePost(func(c *domain.Ctx) error { last++; return nil })
+	app.Get("/x", func(c *domain.Ctx) error { return nil })
+	resp, _ := app.Test("GET", "/x", nil)
+	if resp.StatusCode() != 500 || first != 1 || last != 1 {
+		t.Fatalf("status=%d first=%d last=%d, want 500, 1, 1", resp.StatusCode(), first, last)
+	}
+}
+
+// Both routers resolve the same paths, treat the trailing slash of a
+// registered route as optional and report the route template.
+func TestRouters_Parity(t *testing.T) {
+	cases := []struct {
+		path   string
+		status int
+		route  string
+	}{
+		{"/users/1", 200, "/users/:id"},
+		{"/users/1/posts", 200, "/users/:name/posts"},
+		{"/users/", 404, ""},
+		{"/users/1/", 404, ""},
+		{"/list", 200, "/list/"},
+		{"/list/", 200, "/list/"},
+		{"/dyn/7", 200, "/dyn/:id/"},
+		{"/dyn/7/", 200, "/dyn/:id/"},
+		{"/plain/", 404, ""},
+	}
+	for _, linear := range []bool{false, true} {
+		app := New(domain.Config{UseLinearRouter: linear})
+		h := func(c *domain.Ctx) error {
+			return c.AdapterData.(*FastCtx).Text(c.Route() + "|" + c.Param("id") + "|" + c.Param("name"))
+		}
+		app.Get("/users/:name/posts", h)
+		app.Get("/users/:id", h)
+		app.Get("/list/", h)
+		app.Get("/dyn/:id/", h)
+		app.Get("/plain", h)
+		for _, tc := range cases {
+			resp, _ := app.Test("GET", tc.path, nil)
+			if resp.StatusCode() != tc.status {
+				t.Errorf("linear=%v %s: status = %d, want %d", linear, tc.path, resp.StatusCode(), tc.status)
+				continue
+			}
+			if tc.status == 200 && !strings.HasPrefix(string(resp.Body()), tc.route+"|") {
+				t.Errorf("linear=%v %s: body = %s, want route %s", linear, tc.path, resp.Body(), tc.route)
+			}
+		}
+		// A pattern that failed halfway must not leave its parameter behind.
+		resp, _ := app.Test("GET", "/users/1", nil)
+		if string(resp.Body()) != "/users/:id|1|" {
+			t.Errorf("linear=%v /users/1: body = %s", linear, resp.Body())
+		}
+	}
+}

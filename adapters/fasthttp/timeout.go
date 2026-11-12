@@ -2,6 +2,7 @@ package fasthttp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
@@ -13,9 +14,9 @@ import (
 // deadline passes).
 //
 // This is a cooperative timeout: the handler is not interrupted. When it
-// returns after the deadline without having produced a successful response
-// of its own, the client receives 503. The deadline context is released when
-// the request finishes.
+// returns after the deadline with a context error, a generic error or no
+// response at all, the client receives 503; a response the handler did write
+// is kept. The deadline context is released when the request finishes.
 //
 // Usage:
 //
@@ -48,21 +49,56 @@ func (c *FastCtx) applyTimeout(timeout time.Duration) {
 	c.OnDone(cancel)
 }
 
-var timeoutBody = []byte(`{"error":"request timeout","message":"request exceeded the time limit"}`)
+// requestTimeoutError is the 503 answered when a request ran past its
+// deadline without producing a response of its own.
+type requestTimeoutError struct{}
 
-// writeTimeoutIfExceeded turns a request that ran past its deadline into a
-// 503, unless the handler already answered with something other than a
-// plain 200 or the generic 500 produced by a context error.
-func (c *FastCtx) writeTimeoutIfExceeded() {
-	if c.deadlineCtx == nil || c.deadlineCtx.Err() != context.DeadlineExceeded {
-		return
+func (requestTimeoutError) Error() string   { return "request timeout" }
+func (requestTimeoutError) StatusCode() int { return 503 }
+func (requestTimeoutError) Body() any {
+	return map[string]string{"error": "request timeout", "message": "request exceeded the time limit"}
+}
+
+var errRequestTimeout error = requestTimeoutError{}
+
+// timeoutAware makes the route handler report a missed deadline as an
+// error, so the status is known before the post-middlewares run (the access
+// log and the tracing span record the 503 the client receives).
+func timeoutAware(h domain.Handler) domain.Handler {
+	return func(c *domain.Ctx) error {
+		err := h(c)
+		fc, ok := c.AdapterData.(*FastCtx)
+		if !ok || fc == nil || fc.deadlineCtx == nil {
+			return err
+		}
+		return fc.timeoutResult(err)
 	}
-	fctx := c.fasthttpReq
-	if st := fctx.Response.StatusCode(); st != 200 && st != 500 {
-		return
+}
+
+// timeoutResult decides what a handler that returned after the deadline
+// answers. A handler that completed and wrote a response keeps it — its
+// side effects happened, and a 503 would invite the client to repeat them.
+// The 503 replaces only an outcome caused by the deadline: a context error,
+// a generic (non-HTTP or 500) error, or no response at all.
+func (c *FastCtx) timeoutResult(err error) error {
+	if c.deadlineCtx.Err() != context.DeadlineExceeded {
+		return err
 	}
-	fctx.Response.ResetBody()
-	fctx.SetStatusCode(503)
-	fctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
-	fctx.SetBody(timeoutBody)
+	if err != nil {
+		if err == domain.ErrAbort {
+			return err
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return errRequestTimeout
+		}
+		if httpErr, ok := err.(domain.HTTPError); ok && httpErr.StatusCode() != 500 {
+			return err
+		}
+		return errRequestTimeout
+	}
+	resp := &c.fasthttpReq.Response
+	if resp.StatusCode() == 200 && !resp.IsBodyStream() && len(resp.Body()) == 0 {
+		return errRequestTimeout
+	}
+	return nil
 }

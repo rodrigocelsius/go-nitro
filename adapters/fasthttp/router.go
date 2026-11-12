@@ -16,9 +16,13 @@ type radixNode struct {
 	handler    domain.Handler
 	routePath  string   // registered pattern, e.g. /users/:id
 	paramNames []string // names of the dynamic segments of routePath, in order
-	children   []*radixNode
-	param      *radixNode
-	catchAll   *radixNode
+	// trailingSlash is set when routePath ends in "/" (other than the root).
+	// The slash of such a route is optional: /users/ (what
+	// Group("/users").Get("/") registers) answers /users and /users/.
+	trailingSlash bool
+	children      []*radixNode
+	param         *radixNode
+	catchAll      *radixNode
 }
 
 // RadixRouter implements ports.Router using a segment tree
@@ -86,6 +90,7 @@ func (rt *RadixRouter) Add(method, path string, h domain.Handler) {
 	node.handler = h
 	node.routePath = path
 	node.paramNames = names
+	node.trailingSlash = len(path) > 1 && path[len(path)-1] == '/'
 
 	// Fast path: static routes are also resolved by an exact-match map.
 	if !dynamic {
@@ -250,6 +255,11 @@ func radixFind(node *radixNode, path []byte, i int, vals *[domain.MaxParams]stri
 		i++
 	}
 	seg := path[start:i]
+
+	// Trailing slash: the path ends in an empty segment.
+	if len(seg) == 0 && i == n && node.handler != nil && node.trailingSlash {
+		return node
+	}
 
 	for _, child := range node.children {
 		if matchPathBytes(seg, child.segment) {

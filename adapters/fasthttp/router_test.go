@@ -301,7 +301,7 @@ func TestRadixRouter_CatchAllRoot(t *testing.T) {
 
 	c := &domain.Ctx{}
 	h, ok := rt.Lookup([]byte("GET"), []byte("/anything/here"), c)
-	if !ok {
+	if !ok || h == nil {
 		t.Fatal("Lookup failed for /anything/here")
 	}
 	if c.Param("filepath") != "anything/here" {

@@ -40,9 +40,22 @@ func MatchLinear(routes []domain.LinearRoute, method, path string, c *domain.Ctx
 		if r.Method != method {
 			continue
 		}
-		if MatchPathLinear(r.Path, path, c) {
+		params := c.ParamCount
+		matched := MatchPathLinear(r.Path, path, c)
+		if !matched && len(r.Path) > 1 && r.Path[len(r.Path)-1] == '/' {
+			// The trailing slash of a registered route is optional (same as
+			// the radix router): /users/ also answers /users.
+			c.ParamCount = params
+			matched = MatchPathLinear(r.Path[:len(r.Path)-1], path, c)
+		}
+		if matched {
+			// The route template (not the concrete path) is what tracing and
+			// metrics label requests with, same as the radix router.
+			c.SetRoute(r.Path)
 			return r.Handler, true
 		}
+		// A pattern that failed halfway may have captured parameters.
+		c.ParamCount = params
 	}
 	return nil, false
 }

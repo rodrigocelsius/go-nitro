@@ -115,7 +115,7 @@ func BenchmarkFastWrite(b *testing.B) {
 		buf = AppendFloat64Field(buf, "score", 9.5)
 		buf = AppendComma(buf)
 		buf = AppendBoolField(buf, "active", true)
-		buf = AppendObjectEnd(buf)
+		_ = AppendObjectEnd(buf)
 	}
 }
 
@@ -137,7 +137,7 @@ func BenchmarkAppendVsSprintf(b *testing.B) {
 			buf = AppendStringField(buf, "name", "John")
 			buf = AppendComma(buf)
 			buf = AppendIntField(buf, "age", 30)
-			buf = AppendObjectEnd(buf)
+			_ = AppendObjectEnd(buf)
 		}
 	})
 }

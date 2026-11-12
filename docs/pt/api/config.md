@@ -29,7 +29,7 @@ app := nitro.New(nitro.Config{
 | Field | Type | Default | Descrição |
 |-------|------|---------|-------------|
 | `Env` | `Env` | `EnvProduction` | Afeta HSTS e CORS de dev |
-| `RequestTimeout` | `time.Duration` | `0` | Timeout por requisição (503) |
+| `RequestTimeout` | `time.Duration` | `0` | Timeout por requisição (503, a menos que o handler já tenha escrito a resposta) |
 | `Server` | `ServerConfig` | 30s leitura/escrita, 120s ocioso, buffer de cabeçalho de 16 KiB | Ajuste do servidor HTTP: `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadBufferSize` (tamanho máximo de linha de requisição + cabeçalhos), `WriteBufferSize`, `Concurrency`, `MaxConnsPerIP`, `StreamRequestBody` |
 | `MaxRequestBodySize` | `int` | 1 MiB | Limite do corpo da requisição (413 acima dele) |
 | `TLSConfig` | `*tls.Config` | `nil` | Usado por Listen / ListenTLS |

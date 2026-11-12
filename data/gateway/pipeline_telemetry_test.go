@@ -98,10 +98,13 @@ func (h *recHistogram) Record(v float64, attrs ...string) {
 	h.m.histos[h.name] = append(h.m.histos[h.name], recRec{v: v, attrs: append([]string{}, attrs...)})
 }
 
+// telemetryCtxKey is a private context key type (SA1029).
+type telemetryCtxKey struct{}
+
 type errExec struct{ err error }
 
 func (e errExec) Query(context.Context, string, []any) (Rows, error) { return nil, e.err }
-func (e errExec) QueryRow(context.Context, string, []any) Row        { return errRow{err: e.err} }
+func (e errExec) QueryRow(context.Context, string, []any) Row        { return errRow(e) }
 func (e errExec) Exec(context.Context, string, []any) (Result, error) {
 	return nil, e.err
 }
@@ -115,7 +118,7 @@ func TestGateway_EmitsSpanAndMetricsOnExec(t *testing.T) {
 	m := &recMeter{}
 	gw := New(&stubExec{}, WithTracer(tr), WithMeter(m), DisableLogger())
 
-	parent := context.WithValue(context.Background(), "http", true)
+	parent := context.WithValue(context.Background(), telemetryCtxKey{}, true)
 	_, err := gw.Exec(parent, "insert", "INSERT INTO t VALUES ($1)", []any{1})
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +129,7 @@ func TestGateway_EmitsSpanAndMetricsOnExec(t *testing.T) {
 	if len(tr.starts) != 1 || tr.starts[0].name != "db.insert" {
 		t.Fatalf("starts=%+v", tr.starts)
 	}
-	if tr.starts[0].ctx.Value("http") != true {
+	if tr.starts[0].ctx.Value(telemetryCtxKey{}) != true {
 		t.Fatal("span must receive parent request context")
 	}
 	if !tr.starts[0].span.ended {
