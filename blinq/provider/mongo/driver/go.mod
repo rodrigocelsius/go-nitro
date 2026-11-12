@@ -3,7 +3,7 @@ module github.com/rodrigocelsius/go-nitro/blinq/provider/mongo/driver/v2
 go 1.25
 
 require (
-	github.com/rodrigocelsius/go-nitro/blinq/v2 v2.2.0
+	github.com/rodrigocelsius/go-nitro/blinq/v2 v2.3.0
 	go.mongodb.org/mongo-driver v1.17.3
 )
 

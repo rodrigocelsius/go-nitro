@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-12
+
 ### Added
 - **Asymmetric JWT with key rotation.** `nitro.JWTProviderWithKeys(cfg, nitro.JWTKeys{Signing: …})` signs with RSA (RS256, ≥ 2048 bits), ECDSA P-256 (ES256) or Ed25519 (EdDSA) instead of the shared HS256 secret; tokens carry `kid`. `RotateSigningKey` switches keys while the old one keeps validating, `RetireKey` drops it, and `app.JWKSRoute("/.well-known/jwks.json", provider)` publishes the public keys. A token with an unknown `kid`, or an algorithm other than the one registered for its key, is rejected.
 - **Per-account login limit.** `/login` of `AuthRoutes` / `KeycloakAuthRoutes` answers 429 (`TOO_MANY_ATTEMPTS`, with `Retry-After`) after 10 failed attempts for one account in 15 minutes, whatever the client IP; a successful login clears the count. `auth.WithAccountRateLimit(max, window)` tunes or disables it.
