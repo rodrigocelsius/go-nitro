@@ -50,6 +50,9 @@ func validateValue(prefix string, rv reflect.Value, root any, reg *Registry, opt
 		field := cf.field
 		fieldValue := rv.Field(cf.index)
 		path := joinPath(prefix, cf.jsonName)
+		if cf.flatten {
+			path = prefix
+		}
 
 		if !cf.hasTag {
 			errs = append(errs, validateNested(path, fieldValue, root, reg, opts)...)
