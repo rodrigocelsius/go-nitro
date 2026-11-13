@@ -92,6 +92,7 @@ var (
 	MoneyFromMajor = money.FromMajor
 	FormatMoney    = money.Format
 	ParseMoney     = money.Parse
+	SumMoney       = money.Sum
 )
 
 // Measure helpers.
