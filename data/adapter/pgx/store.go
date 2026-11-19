@@ -145,6 +145,48 @@ func (s *Store[T]) CreateOne(ctx context.Context, row *T) (*T, error) {
 	return created, nil
 }
 
+// Insert writes rows without RETURNING and returns rows affected. Use it for write-only
+// tables (outbox, audit trail) where the writer may INSERT but not SELECT, as with row
+// level security policies that only grant FOR INSERT: CreateOne's RETURNING would need
+// the read policy too. Fills UUID v7 + timestamps when empty, like CreateOne.
+//
+//	_, err := audit.Insert(ctx, &AuditEntry{Action: "tenant.created", ...})
+func (s *Store[T]) Insert(ctx context.Context, rows ...*T) (int64, error) {
+	var total int64
+	for _, row := range rows {
+		if row == nil {
+			return total, fmt.Errorf("pgx: Insert: nil row")
+		}
+		domain.ApplyEntityDefaults(row, domain.EntityDefaults{AutoID: true, AutoTimestamps: true}, true)
+		q, err := insertQuery(s.Entity(), row)
+		if err != nil {
+			return total, err
+		}
+		res, err := q.Execute(ctx, s.api.Provider())
+		if err != nil {
+			return total, err
+		}
+		n, err := res.Count()
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func insertQuery(e field.Entity, row any) (query.Query, error) {
+	cols, vals := structDBValues(row, true)
+	if len(cols) == 0 {
+		return query.Query{}, fmt.Errorf("pgx: Insert: no columns")
+	}
+	sets := make([]expr.Assignment, len(cols))
+	for i, c := range cols {
+		sets[i] = expr.Assignment{Field: expr.FieldRef{Table: e.Name, Column: c}, Value: vals[i]}
+	}
+	return query.InsertInto(e).Values(sets...).OmitReturning(), nil
+}
+
 // CreateSets inserts with typed Assignments (same style as Update).
 //
 //	p, err := store.CreateSets(ctx,

@@ -25,3 +25,25 @@ func TestDeleteWhereRefusesUnfilteredDeletes(t *testing.T) {
 		t.Fatalf("ast %+v", ast)
 	}
 }
+
+func TestInsertQueryOmitsReturning(t *testing.T) {
+	type row struct {
+		ID   string `db:"id"`
+		Name string `db:"name"`
+	}
+	q, err := insertQuery(field.Entity{Name: "audit"}, &row{ID: "1", Name: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast := q.AST()
+	if ast.Kind != expr.KindInsert || len(ast.Returning) != 0 {
+		t.Fatalf("ast %+v", ast)
+	}
+	if _, err := insertQuery(field.Entity{Name: "audit"}, &struct{}{}); err == nil {
+		t.Fatal("empty row accepted")
+	}
+	s := &Store[row]{table: "audit"}
+	if _, err := s.Insert(context.Background(), nil); err == nil {
+		t.Fatal("nil row accepted")
+	}
+}

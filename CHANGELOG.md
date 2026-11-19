@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `pgx.Store.DeleteWhere(ctx, filter)`: deletes every row matching a BLinq filter and
   returns rows affected (the DELETE counterpart of `UpdateWhere`). A filter without
   WHERE is refused with `ErrUnfilteredDelete`, so a missing predicate never empties a table.
+- `pgx.Store.Insert(ctx, rows...)`: INSERT without RETURNING for write-only tables
+  (outbox, audit trail) whose row level security grants INSERT but not SELECT to the
+  writer; fills ids and timestamps like `CreateOne`.
 - `App.Handle(method, path, handler, mws...)` and `Group.Handle(...)`: register a route
   whose method is known only at run time (route tables). An unsupported method is
   recorded as a configuration error (`app.Err()`, refused at `Listen`).
