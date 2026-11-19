@@ -354,6 +354,32 @@ func (s *Store[T]) UpdateWhere(ctx context.Context, filter query.Query, sets ...
 	return n, nil
 }
 
+// ErrUnfilteredDelete is returned by DeleteWhere when the filter has no WHERE clause.
+var ErrUnfilteredDelete = errors.New("pgx: DeleteWhere requires a filter; refusing to delete every row")
+
+// DeleteWhere deletes every row matching filter (typically store.Query().Where(...)) and
+// returns rows affected. A filter without WHERE is refused (ErrUnfilteredDelete), so a
+// missing predicate never empties a table. Row level security, triggers and FK actions of
+// the table apply as for any DELETE.
+//
+//	n, err := store.DeleteWhere(ctx,
+//	    store.Query().Where(modelgen.Session.ExpiresAt.Lt(time.Now())))
+func (s *Store[T]) DeleteWhere(ctx context.Context, filter query.Query) (int64, error) {
+	q, err := deleteWhere(s.Entity(), filter)
+	if err != nil {
+		return 0, err
+	}
+	return s.api.Delete(ctx, q.AST())
+}
+
+func deleteWhere(e field.Entity, filter query.Query) (query.Query, error) {
+	w := filter.AST().Where
+	if w == nil {
+		return query.Query{}, ErrUnfilteredDelete
+	}
+	return query.DeleteFrom(e).Where(field.PredFrom(w)), nil
+}
+
 // Update updates by ID with Assignments and returns the row.
 func (s *Store[T]) Update(ctx context.Context, id any, sets ...expr.Assignment) (*T, error) {
 	if len(sets) == 0 {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 
 	nitroadapter "github.com/rodrigocelsius/go-nitro/adapters/fasthttp/v2"
 	"github.com/rodrigocelsius/go-nitro/domain/v2"
@@ -147,7 +149,38 @@ func (r *Route) Name(name string) *Route {
 	return r
 }
 
+// Handle registers handler for an HTTP method given at run time (route tables):
+//
+//	for _, r := range routes { app.Handle(r.Method, r.Path, r.Handler) }
+//
+// The method is case-insensitive; an unsupported one is recorded as a configuration error
+// (reported at Listen) and nil is returned.
+func (a *App) Handle(method, path string, handler Handler, mws ...Handler) *Route {
+	reg, ok := map[string]func(string, Handler, ...Handler) *Route{
+		"GET": a.Get, "POST": a.Post, "PUT": a.Put, "PATCH": a.Patch,
+		"DELETE": a.Delete, "HEAD": a.Head, "OPTIONS": a.Options,
+	}[strings.ToUpper(method)]
+	if !ok {
+		a.inner.AddConfigError(fmt.Errorf("nitro: Handle: unsupported method %q for %s", method, path))
+		return nil
+	}
+	return reg(path, handler, mws...)
+}
+
 // === Group Methods ===
+
+// Handle registers handler for an HTTP method given at run time; see App.Handle.
+func (g *Group) Handle(method, path string, handler Handler, mws ...Handler) *Route {
+	reg, ok := map[string]func(string, Handler, ...Handler) *Route{
+		"GET": g.Get, "POST": g.Post, "PUT": g.Put, "PATCH": g.Patch,
+		"DELETE": g.Delete, "HEAD": g.Head, "OPTIONS": g.Options,
+	}[strings.ToUpper(method)]
+	if !ok {
+		g.app.inner.AddConfigError(fmt.Errorf("nitro: Handle: unsupported method %q for %s%s", method, g.Prefix(), path))
+		return nil
+	}
+	return reg(path, handler, mws...)
+}
 
 // Get registers a handler for GET requests on the group.
 func (g *Group) Get(path string, handler Handler, mws ...Handler) *Route {

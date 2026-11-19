@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   half away from zero, big-int exact), `Neg`, `IsNegative`, `Cmp`, `Sum`,
   `Allocate` (splits without losing a cent); `ErrCurrencyMismatch`,
   `ErrOverflow`. `nitro.SumMoney` re-exports `Sum`.
+- `pgx.Store.DeleteWhere(ctx, filter)`: deletes every row matching a BLinq filter and
+  returns rows affected (the DELETE counterpart of `UpdateWhere`). A filter without
+  WHERE is refused with `ErrUnfilteredDelete`, so a missing predicate never empties a table.
+- `App.Handle(method, path, handler, mws...)` and `Group.Handle(...)`: register a route
+  whose method is known only at run time (route tables). An unsupported method is
+  recorded as a configuration error (`app.Err()`, refused at `Listen`).
 
 ### Fixed
 - **Validation of embedded structs.** Fields promoted from an embedded struct without a JSON name were reported under the struct's name (`embedded_base.name` instead of `name`, the key the client sent), and the `validate` tags of an *unexported* embedded struct were never checked although `encoding/json` decodes its fields. Both now follow `encoding/json`: promoted fields use the parent's path and are validated; an embedded struct with a JSON name (`json:"base"`) keeps its prefix.
