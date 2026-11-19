@@ -149,6 +149,11 @@ func ParseModels(filename string) ([]Model, error) {
 				Tags:       f.Tags,
 			})
 			existingFields[f.GoName] = true
+			// A user-declared primary key (`blinq:"pk"`) replaces the injected id column:
+			// tables keyed by user_id or key have no id.
+			if hasBlinqToken(f.Tags["blinq"], "pk") {
+				annotations.NoID = true
+			}
 		}
 
 		model.Columns = injectWellKnownFields(model.Columns, existingFields, annotations)
@@ -265,4 +270,14 @@ func resolveTableName(structName, override string) string {
 // ParsePackageName extracts the package name declared in the file.
 func ParsePackageName(filename string) (string, error) {
 	return nitroast.ParsePackageName(filename)
+}
+
+// hasBlinqToken reports whether a comma-separated blinq tag holds want ("pk,index").
+func hasBlinqToken(tag, want string) bool {
+	for _, p := range strings.Split(tag, ",") {
+		if strings.TrimSpace(p) == want {
+			return true
+		}
+	}
+	return false
 }

@@ -314,3 +314,41 @@ func containsSubstr(s, substr string) bool {
 	}
 	return false
 }
+
+// A struct with its own primary key (`blinq:"pk"`) gets no injected id column.
+func TestAutoInjection_DeclaredPrimaryKeySkipsID(t *testing.T) {
+	dir := t.TempDir()
+	src := `package m
+
+//nitro:nosoftdelete
+type Flag struct {
+	Key   string ` + "`db:\"key\" blinq:\"pk\"`" + `
+	Value string ` + "`db:\"value\"`" + `
+}
+
+type Plain struct {
+	Name string ` + "`db:\"name\"`" + `
+}
+`
+	path := filepath.Join(dir, "m.go")
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	models, err := ParseModels(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]map[string]bool{}
+	for _, m := range models {
+		byName[m.StructName] = map[string]bool{}
+		for _, c := range m.Columns {
+			byName[m.StructName][c.ColumnName] = true
+		}
+	}
+	if byName["Flag"]["id"] || !byName["Flag"]["key"] || byName["Flag"]["deleted_at"] {
+		t.Fatalf("Flag columns %v", byName["Flag"])
+	}
+	if !byName["Plain"]["id"] {
+		t.Fatalf("Plain lost its injected id: %v", byName["Plain"])
+	}
+}
