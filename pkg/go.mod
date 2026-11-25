@@ -23,7 +23,7 @@ require (
 	github.com/rodrigocelsius/go-nitro/resilience/v2 v2.3.0
 	github.com/rodrigocelsius/go-nitro/scheduler/v2 v2.3.0
 	github.com/rodrigocelsius/go-nitro/usecases/v2 v2.3.0
-	github.com/valyala/fasthttp v1.77.0
+	github.com/valyala/fasthttp v1.80.0
 )
 
 require (
@@ -32,10 +32,10 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.20.3 // indirect
-	github.com/molecule-man/go-brrr v1.3.0 // indirect
-	github.com/nats-io/nats.go v1.55.0 // indirect
-	github.com/nats-io/nkeys v0.4.16 // indirect
+	github.com/klauspost/compress v1.20.4 // indirect
+	github.com/molecule-man/go-brrr v1.3.1 // indirect
+	github.com/nats-io/nats.go v1.56.0 // indirect
+	github.com/nats-io/nkeys v0.4.17 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/rabbitmq/amqp091-go v1.16.0 // indirect
@@ -52,11 +52,11 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 )
 
 replace (
